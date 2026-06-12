@@ -1,4 +1,4 @@
-module github.com/jholdstock/dcrmapper
+module github.com/jzbz/dcrmapper
 
 go 1.26.4
 

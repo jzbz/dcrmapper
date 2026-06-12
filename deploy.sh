@@ -25,7 +25,7 @@ set -euo pipefail
 # ---- Configuration --------------------------------------------------------
 
 GO_VERSION="1.26.4"
-REPO_URL="https://github.com/jholdstock/dcrmapper"
+REPO_URL="https://github.com/jzbz/dcrmapper"
 SERVICE_USER="dcrmapper"
 APP_HOME="/opt/dcrmapper"
 APP_DIR="${APP_HOME}/app"

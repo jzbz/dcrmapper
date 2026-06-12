@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jholdstock/dcrmapper/crawler"
+	"github.com/jzbz/dcrmapper/crawler"
 )
 
 var amgr *crawler.Manager
