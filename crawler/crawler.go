@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,7 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -31,6 +32,13 @@ const (
 	// nodeTimeout is the time to wait for each peer action - dial, verack and
 	// getaddr.
 	nodeTimeout = time.Second * 10
+
+	// crawlInterval is how often the full crawl + geolocation cycle runs.
+	crawlInterval = time.Minute * 5
+
+	// maxConcurrentChecks caps the number of peers contacted simultaneously
+	// during a crawl.
+	maxConcurrentChecks = 1000
 )
 
 type Manager struct {
@@ -76,6 +84,7 @@ func New(homeDir string, params *chaincfg.Params, seedPeer []string) (*Manager, 
 	now := time.Now()
 	for k, node := range amgr.nodes {
 		if now.Sub(node.LastSuccess) < staleTimeout {
+			node.good = true
 			amgr.goodNodes = append(amgr.goodNodes, k)
 		}
 	}
@@ -86,36 +95,37 @@ func New(homeDir string, params *chaincfg.Params, seedPeer []string) (*Manager, 
 }
 
 func (m *Manager) Start(ctx context.Context, shutdownWg *sync.WaitGroup) {
+	shutdownWg.Add(2)
 
-	m.checkNodes(ctx)
-	m.geoIP(ctx)
-
-	shutdownWg.Add(1)
+	// Crawl loop. The first crawl runs immediately and in the background so the
+	// web server can start serving right away.
 	go func() {
 		defer shutdownWg.Done()
+		ticker := time.NewTicker(crawlInterval)
+		defer ticker.Stop()
 		for {
+			m.checkNodes(ctx)
+			m.geoIP(ctx)
+
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(time.Minute * 5):
-				m.checkNodes(ctx)
-				m.geoIP(ctx)
+			case <-ticker.C:
 			}
 		}
 	}()
 
-	go shutdownWg.Add(1)
+	// Persistence loop. Periodically dumps the address cache to disk and does a
+	// final save on shutdown.
 	go func() {
 		defer shutdownWg.Done()
+		ticker := time.NewTicker(dumpAddressInterval)
+		defer ticker.Stop()
 		for {
 			select {
-			case <-time.After(dumpAddressInterval):
+			case <-ticker.C:
 				m.savePeers()
 			case <-ctx.Done():
-				// App is shutting down.
-				// TODO move this so it happens after everything else has
-				// finished, rather than happening as soon as shutdown is
-				// signalled.
 				m.savePeers()
 				return
 			}
@@ -123,14 +133,14 @@ func (m *Manager) Start(ctx context.Context, shutdownWg *sync.WaitGroup) {
 	}()
 }
 
-func (m *Manager) testPeer(ctx context.Context, ip string, netParams *chaincfg.Params) {
+func (m *Manager) testPeer(ctx context.Context, ip string) {
 	onaddr := make(chan struct{}, 1)
 	verack := make(chan struct{}, 1)
 
 	config := peer.Config{
 		UserAgentName:    "decred-mapper",
 		UserAgentVersion: "0.0.1",
-		Net:              netParams.Net,
+		Net:              m.netParams.Net,
 		DisableRelayTx:   true,
 
 		Listeners: peer.MessageListeners{
@@ -145,15 +155,24 @@ func (m *Manager) testPeer(ctx context.Context, ip string, netParams *chaincfg.P
 						added, p.Addr())
 				}
 
-				onaddr <- struct{}{}
+				// Non-blocking: peers may send multiple addr messages, and a
+				// blocked send here would wedge the peer's message-handling
+				// goroutine forever once nothing is receiving.
+				select {
+				case onaddr <- struct{}{}:
+				default:
+				}
 			},
 			OnVerAck: func(_ *peer.Peer, _ *wire.MsgVerAck) {
-				verack <- struct{}{}
+				select {
+				case verack <- struct{}{}:
+				default:
+				}
 			},
 		},
 	}
 
-	host := net.JoinHostPort(ip, netParams.DefaultPort)
+	host := net.JoinHostPort(ip, m.netParams.DefaultPort)
 	p, err := peer.NewOutboundPeer(&config, host)
 	if err != nil {
 		m.Bad(ip, "outbound peer error", err)
@@ -202,19 +221,30 @@ func (m *Manager) checkNodes(ctx context.Context) {
 
 		log.Printf("Checking %d stale addresses", len(ips))
 
-		// Limit 1000 goroutines to run concurrently.
-		limit := gccm(1000)
-
+		// Test peers concurrently, capped by a semaphore.
+		sem := make(chan struct{}, maxConcurrentChecks)
+		var wg sync.WaitGroup
 		for _, ip := range ips {
-			limit.Wait()
+			select {
+			case <-ctx.Done():
+				wg.Wait()
+				return
+			case sem <- struct{}{}:
+			}
 
+			wg.Add(1)
 			go func(ip string) {
-				m.testPeer(ctx, ip, m.netParams)
-				limit.Done()
+				defer wg.Done()
+				defer func() { <-sem }()
+				m.testPeer(ctx, ip)
 			}(ip)
 		}
-		limit.WaitAllDone()
-		log.Printf("Done checking %d addresses, %d good", len(m.nodes), len(m.goodNodes))
+		wg.Wait()
+
+		m.mtx.RLock()
+		total, good := len(m.nodes), len(m.goodNodes)
+		m.mtx.RUnlock()
+		log.Printf("Done checking %d addresses, %d good", total, good)
 	}
 }
 
@@ -246,10 +276,10 @@ func (m *Manager) AddAddresses(addrs []net.IP) int {
 
 // StaleAddresses returns IPs that need to be tested again.
 func (m *Manager) StaleAddresses() []string {
-	addrs := make([]string, 0)
 	now := time.Now()
 
 	m.mtx.RLock()
+	addrs := make([]string, 0, len(m.nodes))
 	for _, node := range m.nodes {
 		if now.Sub(node.LastAttempt) < staleTimeout {
 			continue
@@ -266,16 +296,23 @@ func (m *Manager) Bad(ip, reason string, err error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	m.nodes[ip].LastAttempt = time.Now()
-
-	for i, n := range m.goodNodes {
-		if n == ip {
-			m.goodNodes[i] = m.goodNodes[len(m.goodNodes)-1]
-			m.goodNodes = m.goodNodes[:len(m.goodNodes)-1]
-			log.Printf("Removed bad peer, reason: %q, IP %s, err: %v\n", reason, ip, err)
-			return
-		}
+	node, ok := m.nodes[ip]
+	if !ok {
+		return
 	}
+	node.LastAttempt = time.Now()
+
+	// Only nodes currently in the good set need to be removed from it.
+	if !node.good {
+		return
+	}
+	node.good = false
+
+	if i := slices.Index(m.goodNodes, ip); i != -1 {
+		m.goodNodes[i] = m.goodNodes[len(m.goodNodes)-1]
+		m.goodNodes = m.goodNodes[:len(m.goodNodes)-1]
+	}
+	log.Printf("Removed bad peer, reason: %q, IP %s, err: %v\n", reason, ip, err)
 }
 
 func (m *Manager) Good(p *peer.Peer) {
@@ -286,29 +323,31 @@ func (m *Manager) Good(p *peer.Peer) {
 
 	node, exists := m.nodes[peerIP]
 	if !exists {
-		panic("unknown peer passed into Good")
+		// Should be impossible since we only dial IPs from the map, but a
+		// panic here would take down the entire service from a background
+		// goroutine.
+		log.Printf("Good called for unknown peer %s", peerIP)
+		return
 	}
 
+	now := time.Now()
 	node.ProtocolVersion = p.ProtocolVersion()
 	node.Services = p.Services()
 	node.UserAgent = p.UserAgent()
-	node.LastSuccess = time.Now()
-	node.LastAttempt = time.Now()
+	node.LastSuccess = now
+	node.LastAttempt = now
 
-	// Add to good list if not already there
-	for _, n := range m.goodNodes {
-		if n == peerIP {
-			return
-		}
+	// Add to the good set if not already a member.
+	if !node.good {
+		node.good = true
+		m.goodNodes = append(m.goodNodes, peerIP)
 	}
-
-	m.goodNodes = append(m.goodNodes, peerIP)
 }
 
 func (m *Manager) AllGoodNodes() []*Node {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
-	var goodNodes []*Node
+	goodNodes := make([]*Node, 0, len(m.goodNodes))
 	for _, ip := range m.goodNodes {
 		goodNodes = append(goodNodes, m.nodes[ip])
 	}
@@ -324,15 +363,7 @@ func (m *Manager) GetNode(ip string) (*Node, bool, bool) {
 		return nil, false, false
 	}
 
-	var good bool
-	for _, goodIP := range m.goodNodes {
-		if goodIP == ip {
-			good = true
-			break
-		}
-	}
-
-	return node, good, true
+	return node, node.good, true
 }
 
 type Count struct {
@@ -343,7 +374,6 @@ type Count struct {
 }
 
 type Summary struct {
-	AppName       string
 	IP4           int
 	IP6           int
 	GoodCount     int
@@ -355,6 +385,8 @@ type Summary struct {
 func (m *Manager) GetSummary() Summary {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
+
+	total := len(m.goodNodes)
 
 	var ip4, ip6 int
 	ua := make(map[string]int)
@@ -369,88 +401,84 @@ func (m *Manager) GetSummary() Summary {
 			ip6++
 		}
 
-		// Count countries
 		if node.GeoData != nil {
-			country[node.GeoData.Country] = country[node.GeoData.Country] + 1
+			country[node.GeoData.Country]++
+			as[node.GeoData.ASName]++
 		}
 
-		// Count AS
-		if node.GeoData != nil {
-			as[node.GeoData.ASName] = as[node.GeoData.ASName] + 1
-		}
-
-		// Count UserAgents
-		ua[node.UserAgent] = ua[node.UserAgent] + 1
+		ua[node.UserAgent]++
 	}
 
-	// Sort UserAgents
-	var sortedUA []Count
+	// absPercent returns v as a percentage of the total good nodes, guarding
+	// against division by zero when there are none.
+	absPercent := func(v int) int {
+		if total == 0 {
+			return 0
+		}
+		return 100 * v / total
+	}
+
+	// Sort UserAgents by count, descending.
+	sortedUA := make([]Count, 0, len(ua))
 	for k, v := range ua {
-		sortedUA = append(sortedUA, Count{
-			Value: k,
-			Count: v,
-		})
+		sortedUA = append(sortedUA, Count{Value: k, Count: v})
 	}
-	sort.Slice(sortedUA, func(i, j int) bool {
-		return sortedUA[i].Count > sortedUA[j].Count
-	})
+	slices.SortFunc(sortedUA, func(a, b Count) int { return cmp.Compare(b.Count, a.Count) })
 
-	// Sort AS
-	var sortedAS []Count
+	// Sort AS by count, descending.
+	sortedAS := make([]Count, 0, len(as))
 	for k, v := range as {
 		sortedAS = append(sortedAS, Count{
 			Value:      k,
 			Count:      v,
-			AbsPercent: 100 * v / len(m.goodNodes),
+			AbsPercent: absPercent(v),
 		})
 	}
-	sort.Slice(sortedAS, func(i, j int) bool {
-		return sortedAS[i].Count > sortedAS[j].Count
-	})
+	slices.SortFunc(sortedAS, func(a, b Count) int { return cmp.Compare(b.Count, a.Count) })
 
-	// Sort Countries
+	// Sort Countries by count, descending. RelPercent is relative to the most
+	// populous country so the largest bar fills the row.
 	var maxCountries int
 	for _, v := range country {
-		if v > maxCountries {
-			maxCountries = v
-		}
+		maxCountries = max(maxCountries, v)
 	}
-	var sortedCountry []Count
+	sortedCountry := make([]Count, 0, len(country))
 	for k, v := range country {
-		sortedCountry = append(sortedCountry, Count{
+		c := Count{
 			Value:      k,
 			Count:      v,
-			RelPercent: 100 * v / maxCountries,
-			AbsPercent: 100 * v / len(m.goodNodes),
-		})
+			AbsPercent: absPercent(v),
+		}
+		if maxCountries > 0 {
+			c.RelPercent = 100 * v / maxCountries
+		}
+		sortedCountry = append(sortedCountry, c)
 	}
-	sort.Slice(sortedCountry, func(i, j int) bool {
-		return sortedCountry[i].Count > sortedCountry[j].Count
-	})
+	slices.SortFunc(sortedCountry, func(a, b Count) int { return cmp.Compare(b.Count, a.Count) })
 
 	return Summary{
 		IP4:           ip4,
 		IP6:           ip6,
-		GoodCount:     len(m.goodNodes),
+		GoodCount:     total,
 		UserAgents:    sortedUA,
 		AS:            sortedAS,
 		CountryCounts: sortedCountry,
 	}
-
 }
 
 func (m *Manager) PageOfNodes(first, last int) (int, []*Node) {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
-	var toReturn []*Node
 	count := len(m.goodNodes)
 
-	if count == 0 {
-		return count, toReturn
-	}
+	// Clamp the requested range so pages beyond the end return an empty
+	// slice rather than panicking.
+	first = min(max(first, 0), count)
+	last = min(max(last, first), count)
 
-	keys := m.goodNodes[first:min(last, count)]
+	keys := m.goodNodes[first:last]
+	toReturn := make([]*Node, 0, len(keys))
 	for _, key := range keys {
 		toReturn = append(toReturn, m.nodes[key])
 	}

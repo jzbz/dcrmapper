@@ -2,82 +2,104 @@
 
 {{ template "summary" . }}
 
-<div class="row">
-    <div class="col">
-
-        <div id="blocks-by-account-page-select" class="page-select pb-4"></div>
-
-        <table class="table table-striped">
-            <thead>
+<section class="card overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+            <thead class="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
                 <tr>
-                    <th>IP</th>
-                    <th>Location</th>
-                    <th>ISP</th>
-                    <th>Org</th>
-                    <th>AS</th>
+                    <th class="px-4 py-3 font-medium">IP</th>
+                    <th class="px-4 py-3 font-medium">Location</th>
+                    <th class="px-4 py-3 font-medium">ISP</th>
+                    <th class="px-4 py-3 font-medium">Org</th>
+                    <th class="px-4 py-3 font-medium">AS</th>
                 </tr>
             </thead>
-            <tbody id="blocks-by-account-table">
+            <tbody id="nodes-table" class="divide-y divide-slate-100 dark:divide-white/5">
                 {{ range $node := .Nodes }}
-                    <tr>
-                        <td><a href="/node?ip={{ $node.IP }}">{{ $node.IP }}</a></td>
-                        {{ with $node.GeoData}}
-                            <td>{{ .City }} / {{ .Region }}<br/>{{ .Country }}
-                            <td>{{ .ISP }}</td>
-                            <td>{{ .Org }}</td>
-                            <td>{{ .AS }}</td>
+                    <tr class="hover:bg-slate-50 dark:hover:bg-white/5">
+                        <td class="px-4 py-3 font-mono"><a class="text-dcr-green-dark hover:underline dark:text-dcr-green" href="/node?ip={{ $node.IP }}">{{ $node.IP }}</a></td>
+                        {{ with $node.GeoData }}
+                            <td class="px-4 py-3">{{ .City }} / {{ .Region }}<br/><span class="text-slate-500 dark:text-slate-400">{{ .Country }}</span></td>
+                            <td class="px-4 py-3">{{ .ISP }}</td>
+                            <td class="px-4 py-3">{{ .Org }}</td>
+                            <td class="px-4 py-3">{{ .AS }}</td>
                         {{ else }}
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
+                            <td class="px-4 py-3" colspan="4"></td>
                         {{ end }}
                     </tr>
                 {{ else }}
-                    <tr><td colspan="100%"><span class="no-data">No nodes</span></td></tr>
-                {{end}}
+                    <tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No nodes</td></tr>
+                {{ end }}
             </tbody>
         </table>
     </div>
-    
-</div>
+
+    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm dark:border-white/10">
+        <span id="page-info" class="text-slate-500 dark:text-slate-400"></span>
+        <div class="flex items-center gap-2">
+            <button id="prev-page" class="btn-ghost px-3 py-1.5" disabled>Previous</button>
+            <button id="next-page" class="btn-ghost px-3 py-1.5">Next</button>
+        </div>
+    </div>
+</section>
 
 <script>
-    $.fn["pagination"].defaults.locator = "data";
-    $.fn["pagination"].defaults.totalNumberLocator = function(response) { return response.count; };
-    $.fn["pagination"].defaults.hideWhenLessThanOnePage = true;
-    $.fn["pagination"].defaults.pageSize = 10;
+    const pageSize = 10;
+    let pageNumber = 1;
+    let totalCount = {{ .GoodCount }};
 
+    const tbody = document.getElementById('nodes-table');
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    const pageInfo = document.getElementById('page-info');
 
-    $('#blocks-by-account-page-select').pagination({
-        dataSource: "/nodes",
-        callback: function(data) {
-            var html = '';
-            if (data.length > 0) {
-                $.each(data, function(_, item){
-                    if (item.GeoData) {
-                        html += '<tr>';
-                        html += '<td><a href="/node?ip='  + item.IP +  '">' + item.IP + '</a></td>';
-                        html += '<td>' + item.GeoData.City + ' / ' + item.GeoData.Region + '<br />' + item.GeoData.Country + '</td>';
-                        html += '<td>' + item.GeoData.ISP + '</td>';
-                        html += '<td>' + item.GeoData.Org + '</td>';
-                        html += '<td>' + item.GeoData.AS + '</td>';
-                        html += '</tr>';
-                    } else {
-                        html += '<tr>';
-                        html += '<td><a href="/node?ip='  + item.IP +  '">' + item.IP + '</a></td>';
-                        html += '<td></td>';
-                        html += '<td></td>';
-                        html += '<td></td>';
-                        html += '<td></td>';
-                        html += '</tr>';
-                    }
-                });
-            } else {
-                html += '<tr><td colspan="100%"><span class="no-data">No nodes</span></td></tr>';
-            }
-            $('#blocks-by-account-table').html(html);
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    function rowFor(item) {
+        const ipCell = '<td class="px-4 py-3 font-mono"><a class="text-dcr-green-dark hover:underline dark:text-dcr-green" href="/node?ip=' + encodeURIComponent(item.IP) + '">' + esc(item.IP) + '</a></td>';
+        if (item.GeoData) {
+            const g = item.GeoData;
+            return '<tr class="hover:bg-slate-50 dark:hover:bg-white/5">' + ipCell +
+                '<td class="px-4 py-3">' + esc(g.City) + ' / ' + esc(g.Region) + '<br/><span class="text-slate-500 dark:text-slate-400">' + esc(g.Country) + '</span></td>' +
+                '<td class="px-4 py-3">' + esc(g.ISP) + '</td>' +
+                '<td class="px-4 py-3">' + esc(g.Org) + '</td>' +
+                '<td class="px-4 py-3">' + esc(g.AS) + '</td></tr>';
         }
-    });
+        return '<tr class="hover:bg-slate-50 dark:hover:bg-white/5">' + ipCell + '<td class="px-4 py-3" colspan="4"></td></tr>';
+    }
+
+    function render(data) {
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No nodes</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.map(rowFor).join('');
+    }
+
+    function updateControls() {
+        const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+        const from = totalCount === 0 ? 0 : (pageNumber - 1) * pageSize + 1;
+        const to = Math.min(pageNumber * pageSize, totalCount);
+        pageInfo.textContent = totalCount === 0 ? 'No nodes' : `${from}–${to} of ${totalCount}`;
+        prevBtn.disabled = pageNumber <= 1;
+        nextBtn.disabled = pageNumber >= totalPages;
+    }
+
+    function load() {
+        fetch(`/nodes?pageNumber=${pageNumber}&pageSize=${pageSize}`)
+            .then((res) => res.json())
+            .then((payload) => {
+                totalCount = payload.count;
+                render(payload.data);
+                updateControls();
+            });
+    }
+
+    prevBtn.addEventListener('click', () => { if (pageNumber > 1) { pageNumber--; load(); } });
+    nextBtn.addEventListener('click', () => { pageNumber++; load(); });
+
+    updateControls();
+    load();
 </script>
+
 {{ template "footer" . }}

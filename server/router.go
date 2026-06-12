@@ -92,10 +92,9 @@ func Start(ctx context.Context, listen string, cookieDomain string, mgr *crawler
 
 	// Start webserver.
 	go func() {
-		err = srv.Serve(listener)
 		// If the server dies for any reason other than ErrServerClosed (from
 		// graceful server.Shutdown), log the error and request shutdown.
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("Unexpected webserver error: %v", err)
 			requestShutdownChan <- struct{}{}
 		}

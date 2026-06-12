@@ -1,6 +1,6 @@
 module github.com/jholdstock/dcrmapper
 
-go 1.24.4
+go 1.26.4
 
 require (
 	github.com/decred/dcrd/chaincfg/v3 v3.2.1

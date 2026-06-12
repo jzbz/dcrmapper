@@ -49,6 +49,9 @@ func run(ctx context.Context) error {
 		fmt.Fprintf(os.Stderr, "Failed to initialize server: %v\n", err)
 		requestShutdown()
 		wg.Wait()
+		// Return the actual failure rather than the context error so the
+		// process exits non-zero.
+		return err
 	}
 
 	// Wait for shutdown tasks to complete before running deferred tasks and

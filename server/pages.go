@@ -12,10 +12,13 @@ const (
 	appName = "Decred Mapper"
 )
 
+// themeCookieMaxAge is how long the theme preference persists (one year).
+const themeCookieMaxAge = 365 * 24 * 60 * 60
+
 func getTheme(c *gin.Context) string {
 	theme := c.Query("theme")
 	if theme != "" {
-		c.SetCookie("theme", theme, 3600, "/", domain, false, false)
+		c.SetCookie("theme", theme, themeCookieMaxAge, "/", domain, false, false)
 		return theme
 	}
 
@@ -23,53 +26,63 @@ func getTheme(c *gin.Context) string {
 	return theme
 }
 
-func homepage(c *gin.Context) {
-	c.HTML(http.StatusOK, "worldmap.html", gin.H{
-		"ActivePage": "WorldMap",
+// baseData returns the template data common to every page.
+func baseData(c *gin.Context, activePage string) gin.H {
+	return gin.H{
+		"ActivePage": activePage,
 		"Summary":    amgr.GetSummary(),
 		"AppName":    appName,
 		"Theme":      getTheme(c),
-	})
+	}
+}
+
+func homepage(c *gin.Context) {
+	c.HTML(http.StatusOK, "worldmap.html", baseData(c, "WorldMap"))
+}
+
+// mapMarker is the minimal node representation needed to plot a marker on the
+// world map.
+type mapMarker struct {
+	IP  string  `json:"ip"`
+	Lat float32 `json:"lat"`
+	Lon float32 `json:"lon"`
 }
 
 func worldNodes(c *gin.Context) {
-	// TODO Dont marshal and send all node data, just lat/lon.
-	allGoodNodes := amgr.AllGoodNodes()
-	c.JSON(http.StatusOK, allGoodNodes)
+	nodes := amgr.AllGoodNodes()
+	markers := make([]mapMarker, 0, len(nodes))
+	for _, n := range nodes {
+		if n.GeoData == nil {
+			continue
+		}
+		markers = append(markers, mapMarker{
+			IP:  n.IP.String(),
+			Lat: n.GeoData.Lat,
+			Lon: n.GeoData.Lon,
+		})
+	}
+	c.JSON(http.StatusOK, markers)
 }
 
 func userAgents(c *gin.Context) {
-	c.HTML(http.StatusOK, "user_agents.html", gin.H{
-		"ActivePage": "UserAgents",
-		"Summary":    amgr.GetSummary(),
-		"AppName":    appName,
-		"Theme":      getTheme(c),
-	})
+	c.HTML(http.StatusOK, "user_agents.html", baseData(c, "UserAgents"))
 }
 
 func list(c *gin.Context) {
 	count, nodes := amgr.PageOfNodes(0, 10)
-	c.HTML(http.StatusOK, "list.html", gin.H{
-		"ActivePage": "AllNodes",
-		"Node":       nodes,
-		"GoodCount":  count,
-		"Summary":    amgr.GetSummary(),
-		"AppName":    appName,
-		"Theme":      getTheme(c),
-	})
+	data := baseData(c, "AllNodes")
+	data["Nodes"] = nodes
+	data["GoodCount"] = count
+	c.HTML(http.StatusOK, "list.html", data)
 }
 
 func node(c *gin.Context) {
 	ip := c.Query("ip")
 	node, good, ok := amgr.GetNode(ip)
-	c.HTML(http.StatusOK, "node.html", gin.H{
-		"ActivePage": "",
-		"Good":       good,
-		"Node":       node,
-		"OK":         ok,
-		"Summary":    amgr.GetSummary(),
-		"AppName":    appName,
-		"Theme":      getTheme(c),
-		"SearchIP":   ip,
-	})
+	data := baseData(c, "")
+	data["Good"] = good
+	data["Node"] = node
+	data["OK"] = ok
+	data["SearchIP"] = ip
+	c.HTML(http.StatusOK, "node.html", data)
 }

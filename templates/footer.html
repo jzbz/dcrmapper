@@ -1,7 +1,14 @@
 {{ define "footer" }}
 
-  </div>
+        </main>
 
-</body>
+        <footer class="border-t border-slate-200 py-6 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+            <div class="mx-auto max-w-6xl px-4 sm:px-6">
+                {{ .AppName }} &middot; geolocation by
+                <a class="text-dcr-green-dark hover:underline dark:text-dcr-green" href="https://ip-api.com/" rel="noopener" target="_blank">ip-api.com</a>
+            </div>
+        </footer>
+
+    </body>
 </html>
 {{ end }}

@@ -40,6 +40,14 @@ func ipNet(ip string, ones, bits int) net.IPNet {
 }
 
 func isRoutable(addr net.IP) bool {
+	// Reject nil and obviously non-routable addresses. Remote peers control
+	// the contents of addr messages, so this cannot assume well-formed input.
+	// IsLinkLocalUnicast covers both 169.254.0.0/16 and fe80::/10.
+	if addr == nil || addr.IsUnspecified() || addr.IsLoopback() ||
+		addr.IsMulticast() || addr.IsLinkLocalUnicast() {
+		return false
+	}
+
 	for _, n := range rfc1918Nets {
 		if n.Contains(addr) {
 			return false

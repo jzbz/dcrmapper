@@ -2,12 +2,15 @@ package server
 
 import (
 	"errors"
-	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
+
+// maxPageSize caps how many nodes a single request may ask for.
+const maxPageSize = 100
 
 func getPaginationParams(r *http.Request) (first, last int, err error) {
 	pageNumber, err := strconv.Atoi(r.FormValue("pageNumber"))
@@ -19,7 +22,7 @@ func getPaginationParams(r *http.Request) (first, last int, err error) {
 		return 0, 0, err
 	}
 
-	if pageNumber < 1 || pageSize < 1 {
+	if pageNumber < 1 || pageSize < 1 || pageSize > maxPageSize {
 		return 0, 0, errors.New("invalid number given for pagenumber or pagesize")
 	}
 
@@ -32,17 +35,12 @@ func getPaginationParams(r *http.Request) (first, last int, err error) {
 func paginatedNodes(c *gin.Context) {
 	first, last, err := getPaginationParams(c.Request)
 	if err != nil {
-		fmt.Println(err)
+		log.Printf("Rejected pagination request: %v", err)
 		c.Status(http.StatusBadRequest)
 		return
 	}
 
 	count, nodes := amgr.PageOfNodes(first, last)
-	if err != nil {
-		fmt.Println(err)
-		c.Status(http.StatusBadRequest)
-		return
-	}
 
 	c.JSON(http.StatusOK, paginationPayload{
 		Count: count,

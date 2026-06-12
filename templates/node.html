@@ -2,124 +2,90 @@
 
 {{ if .OK }}
 
-    <div class="row pt-3">
-        <div class="col">
-            <h1>
-                {{ .Node.IP }}
-            </h1>
-        </div>
+    <div class="mb-6 flex flex-wrap items-center gap-3">
+        <h1 class="font-mono text-2xl font-bold sm:text-3xl">{{ .Node.IP }}</h1>
+        {{ if .Good }}
+            <span class="badge-online">Online</span>
+        {{ else }}
+            <span class="badge-offline">Offline</span>
+            <span class="text-sm text-slate-500 dark:text-slate-400"><em>Last online {{ date .Node.LastSuccess }}</em></span>
+        {{ end }}
     </div>
-    
-    <div class="row">
 
-        <div class="col-lg">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
-            <table class="table">
-                <!-- TODO show services -->
-                <tr>
-                    <th>Status</th>
-                    <td>
-                        {{ if .Good }}
-                            <span class="badge badge-success">Online</span>
-                        {{ else }}
-                            <span class="badge badge-danger">Offline</span>
-                            <span class="ml-2 text-muted"><em>(Last online {{ date .Node.LastSuccess }})</em></span>
-                        {{ end }}
-                    </td>
-                </tr>
-                <tr>
-                    <th>Last Updated</th>
-                    <td>{{ date .Node.LastAttempt }}</td>
-                </tr>
-                <tr>
-                    <th>User Agent</th>
-                    <td>{{ .Node.UserAgent }}</td>
-                </tr>
-            </table>
+        <div class="space-y-6">
+            <section class="card overflow-hidden">
+                <table class="w-full text-left text-sm">
+                    <tbody class="divide-y divide-slate-100 dark:divide-white/5">
+                        <tr>
+                            <th class="w-40 px-4 py-3 font-medium text-slate-500 dark:text-slate-400">Status</th>
+                            <td class="px-4 py-3">
+                                {{ if .Good }}<span class="badge-online">Online</span>
+                                {{ else }}<span class="badge-offline">Offline</span>{{ end }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th class="px-4 py-3 font-medium text-slate-500 dark:text-slate-400">Last updated</th>
+                            <td class="px-4 py-3">{{ date .Node.LastAttempt }}</td>
+                        </tr>
+                        <tr>
+                            <th class="px-4 py-3 font-medium text-slate-500 dark:text-slate-400">User agent</th>
+                            <td class="px-4 py-3 font-mono">{{ .Node.UserAgent }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
 
-            {{ with .Node.GeoData}}
-            <h2>Network</h2>
-            <table class="table">
-                <tr>
-                    <th>ISP</th>
-                    <td>{{ .ISP }}</td>
-                </tr>
-                <tr>
-                    <th>Org</th>
-                    <td>{{ .Org }}</td>
-                </tr>
-                <tr>
-                    <th>AS</th>
-                    <td>{{ .AS }}</td>
-                </tr>
-            </table>
-            {{ else }}
+            {{ with .Node.GeoData }}
+            <section class="card overflow-hidden">
+                <h2 class="border-b border-slate-200 px-4 py-3 text-sm font-semibold dark:border-white/10">Network</h2>
+                <table class="w-full text-left text-sm">
+                    <tbody class="divide-y divide-slate-100 dark:divide-white/5">
+                        <tr><th class="w-40 px-4 py-3 font-medium text-slate-500 dark:text-slate-400">ISP</th><td class="px-4 py-3">{{ .ISP }}</td></tr>
+                        <tr><th class="px-4 py-3 font-medium text-slate-500 dark:text-slate-400">Org</th><td class="px-4 py-3">{{ .Org }}</td></tr>
+                        <tr><th class="px-4 py-3 font-medium text-slate-500 dark:text-slate-400">AS</th><td class="px-4 py-3">{{ .AS }}</td></tr>
+                    </tbody>
+                </table>
+            </section>
             {{ end }}
-
         </div>
 
-        <div class="col-lg">
+        {{ with .Node.GeoData }}
+        <section class="card overflow-hidden">
             <div id="node-map"></div>
-            
-            <div class="d-flex justify-content-between
-             {{ if not (eq .Theme "386") }}border-left border-bottom border-right{{end}}"
-             {{ if eq .Theme "386" }}style="border-left: 0.875px solid #bbbbbb;
-             border-bottom: 0.875px solid #bbbbbb;
-             border-right: 0.875px solid #bbbbbb;"{{end}} >
-
-                <div class="py-2 px-4">
-                    {{ .Node.GeoData.City }}<br/>
-                    {{ .Node.GeoData.Region }}<br/>
-                    {{ .Node.GeoData.Country }}
+            <div class="flex items-center justify-between gap-4 border-t border-slate-200 px-4 py-3 text-sm dark:border-white/10">
+                <div>
+                    {{ .City }}<br/>{{ .Region }}<br/>{{ .Country }}
                 </div>
-                <div class="py-2 px-4">
-                    <span class="text-muted">
-                        Lat:&nbsp;{{ .Node.GeoData.Lat }}, Lon:&nbsp;{{ .Node.GeoData.Lon }}
-                    </span>
+                <div class="text-right text-slate-500 dark:text-slate-400">
+                    Lat: {{ .Lat }}<br/>Lon: {{ .Lon }}
                 </div>
             </div>
-        </div>
-        
+        </section>
+        {{ end }}
     </div>
 
-    {{ with .Node.GeoData}}
+    {{ with .Node.GeoData }}
     <script>
-        var node_lat = {{ .Lat }};
-        var node_lon = {{ .Lon }};
-        var node_ip = '{{ $.Node.IP }}';
-
-        var map = L.map( 'node-map', {
-            center: [node_lat, node_lon],
+        const map = L.map('node-map', {
+            center: [{{ .Lat }}, {{ .Lon }}],
             minZoom: 2,
             zoom: 5,
             attributionControl: false,
         });
-        
-        L.tileLayer( 'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            subdomains: ['a', 'b', 'c'],
-            noWrap: true,
-        }).addTo( map );
-
-        L.marker( [node_lat, node_lon] )
-            .bindPopup( node_ip )
-            .addTo( map );
+        const tileURL = {{ if eq $.Theme "dark" }}'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png'{{ else }}'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png'{{ end }};
+        L.tileLayer(tileURL, { noWrap: true, subdomains: 'abcd' }).addTo(map);
+        L.marker([{{ .Lat }}, {{ .Lon }}]).bindPopup('{{ $.Node.IP }}').addTo(map);
     </script>
     {{ end }}
 
 {{ else }}
-<div class="row pt-3">
-    <div class="col">
-        <div class="pt-4">
-            <div class="alert alert-danger">
-                Node not found with IP {{ .SearchIP }}
-            </div>
-        </div>
+
+    <div class="rounded-lg border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">
+        No node found with IP {{ .SearchIP }}
     </div>
-</div>
 
-
-
-  
 {{ end }}
 
 {{ template "footer" . }}
