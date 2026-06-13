@@ -171,8 +171,12 @@ fi
 # atomically in the next step, *after* a successful build — so a broken build
 # can never take down a running service, and the swap has no partial-file window
 # (rename(2) on the same filesystem is atomic).
+#
+# -buildvcs=false: the build runs as root while the checkout is owned by the
+# service user, so Go's VCS stamping would invoke git in a repo git considers
+# "dubiously owned" and fail. We don't need the revision stamped into the binary.
 log "Building dcrmapper"
-( cd "$APP_DIR" && GOTOOLCHAIN=local "$GO" build -o "${APP_DIR}/dcrmapper.new" . )
+( cd "$APP_DIR" && GOTOOLCHAIN=local "$GO" build -buildvcs=false -o "${APP_DIR}/dcrmapper.new" . )
 chown "${SERVICE_USER}:${SERVICE_USER}" "${APP_DIR}/dcrmapper.new"
 ok "Build succeeded"
 
