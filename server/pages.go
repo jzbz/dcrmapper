@@ -15,6 +15,9 @@ const (
 // themeCookieMaxAge is how long the theme preference persists (one year).
 const themeCookieMaxAge = 365 * 24 * 60 * 60
 
+// defaultTheme is used when the visitor has expressed no preference.
+const defaultTheme = "dark"
+
 func getTheme(c *gin.Context) string {
 	theme := c.Query("theme")
 	if theme != "" {
@@ -22,8 +25,11 @@ func getTheme(c *gin.Context) string {
 		return theme
 	}
 
-	theme, _ = c.Cookie("theme")
-	return theme
+	if theme, _ = c.Cookie("theme"); theme != "" {
+		return theme
+	}
+
+	return defaultTheme
 }
 
 // baseData returns the template data common to every page.
