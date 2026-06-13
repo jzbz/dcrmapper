@@ -7,6 +7,7 @@
 
         <title>{{ .AppName }}</title>
 
+        <link rel="icon" type="image/svg+xml" href="/public/images/dcr.svg">
         <link rel="stylesheet" href="/public/css/tailwind.css">
         <link rel="stylesheet" href="/public/css/vendor/leaflet-1.9.4.css"/>
         <script src="/public/js/vendor/leaflet-1.9.4.min.js"></script>
@@ -16,7 +17,7 @@
         <nav class="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-white/10 dark:bg-dcr-navy/90">
             <div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6">
                 <a href="/" class="flex items-center gap-2 text-lg font-semibold tracking-tight">
-                    <span class="inline-block h-3 w-3 rounded-full bg-dcr-green"></span>
+                    <img src="/public/images/dcr.svg" alt="Decred logo" class="h-7 w-7 rounded" width="28" height="28">
                     {{ .AppName }}
                 </a>
 
