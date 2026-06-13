@@ -62,6 +62,46 @@
   height: 360px;
 }
 
+/* Theme the map backdrop so the area around the world (visible on wide screens
+   and while tiles load) blends with the basemap instead of showing Leaflet's
+   default light-grey, which looked like a white border in dark mode. The colors
+   approximate each CARTO basemap's water. */
+.leaflet-container {
+  background: #dfe5e9;
+}
+.dark .leaflet-container {
+  background: #0a0e1a;
+}
+
+/* Theme the zoom control to match the UI instead of the default white buttons. */
+.leaflet-bar {
+  border: 1px solid rgb(226 232 240);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+.leaflet-bar a,
+.leaflet-bar a:hover {
+  background: #ffffff;
+  color: #334155;
+  border-bottom-color: rgb(226 232 240);
+}
+.leaflet-bar a:hover {
+  background: #f1f5f9;
+}
+.dark .leaflet-bar {
+  border-color: rgb(255 255 255 / 0.1);
+}
+.dark .leaflet-bar a,
+.dark .leaflet-bar a:hover {
+  background: #0e1c52;
+  color: #e2e8f0;
+  border-bottom-color: rgb(255 255 255 / 0.1);
+}
+.dark .leaflet-bar a:hover {
+  background: #13235e;
+}
+
 /* Keep Leaflet popups readable in dark mode. */
 .dark .leaflet-popup-content-wrapper,
 .dark .leaflet-popup-tip {
