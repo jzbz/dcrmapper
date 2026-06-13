@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"html/template"
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -18,6 +21,37 @@ var amgr *crawler.Manager
 var domain string
 
 const timeFormat = "02 Jan 2006 15:04 MST"
+
+// assetVersions caches a content hash per static asset path so the asset() URLs
+// only change when the file's contents change. Computed lazily and cached for
+// the life of the process (assets do not change without a restart).
+var (
+	assetMu       sync.Mutex
+	assetVersions = map[string]string{}
+)
+
+// assetURL appends a short content-hash query string to a static asset path so
+// browsers (and the long-lived CDN/proxy cache) re-fetch it whenever it changes,
+// while still caching aggressively between changes. webPath is the public URL
+// path, e.g. "/public/css/tailwind.css".
+func assetURL(webPath string) string {
+	assetMu.Lock()
+	defer assetMu.Unlock()
+
+	if v, ok := assetVersions[webPath]; ok {
+		return webPath + "?v=" + v
+	}
+
+	v := "dev"
+	if b, err := os.ReadFile("." + webPath); err == nil {
+		sum := sha256.Sum256(b)
+		v = hex.EncodeToString(sum[:])[:10]
+	} else {
+		log.Printf("asset %s: could not hash for cache-busting: %v", webPath, err)
+	}
+	assetVersions[webPath] = v
+	return webPath + "?v=" + v
+}
 
 func NewRouter() *gin.Engine {
 	// With release mode enabled, gin will only read template files once and cache them.
@@ -32,8 +66,9 @@ func NewRouter() *gin.Engine {
 	router.Use(gin.Recovery())
 
 	router.SetFuncMap(template.FuncMap{
-		"incr": func(i int) int { return i + 1 },
-		"date": func(t time.Time) string { return t.In(time.UTC).Format(timeFormat) },
+		"incr":  func(i int) int { return i + 1 },
+		"date":  func(t time.Time) string { return t.In(time.UTC).Format(timeFormat) },
+		"asset": assetURL,
 	})
 
 	router.Static("/public", "./public/")
