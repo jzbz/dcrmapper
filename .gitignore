@@ -1,5 +1,7 @@
 *.exe
 dcrmapper
+# Temp binary written by deploy.sh before the atomic swap.
+dcrmapper.new
 
 # Testing, profiling, and benchmarking artifacts
 cov.out
