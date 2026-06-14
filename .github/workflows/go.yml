@@ -16,6 +16,10 @@ jobs:
           go-version: ${{ matrix.go }}
       - name: Build
         run: go build ./...
+      - name: Test
+        run: make test
+      - name: Verify generated CSS is up to date
+        run: make css-check
       - name: Lint
         uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee #v9.2.1
         with:

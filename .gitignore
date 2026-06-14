@@ -2,6 +2,8 @@
 dcrmapper
 # Temp binary written by deploy.sh before the atomic swap.
 dcrmapper.new
+# Local tooling fetched by `make tools` (e.g. the Tailwind standalone CLI).
+/bin/
 
 # Testing, profiling, and benchmarking artifacts
 cov.out
