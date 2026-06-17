@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/decred/dcrd/chaincfg/v3"
@@ -48,6 +50,19 @@ type Manager struct {
 	nodes     map[string]*Node
 	goodNodes []string
 	peersFile string
+
+	// snap holds an immutable, point-in-time view of the crawl results,
+	// rebuilt once per crawl cycle and published atomically. HTTP handlers read
+	// it without locking and without racing the crawler's writes to Node fields.
+	snap atomic.Pointer[snapshot]
+}
+
+// snapshot is what the web handlers serve between crawl cycles. Its Node
+// pointers reference copies, never live map entries, so readers never observe a
+// half-updated node.
+type snapshot struct {
+	summary Summary
+	good    []*Node // good nodes, copied and sorted by IP for stable pagination
 }
 
 func New(homeDir string, params *chaincfg.Params, seedPeer []string) (*Manager, error) {
@@ -91,6 +106,8 @@ func New(homeDir string, params *chaincfg.Params, seedPeer []string) (*Manager, 
 
 	log.Printf("Initialized with %d nodes, %d good", len(amgr.nodes), len(amgr.goodNodes))
 
+	amgr.rebuildSnapshot()
+
 	return amgr, nil
 }
 
@@ -106,6 +123,7 @@ func (m *Manager) Start(ctx context.Context, shutdownWg *sync.WaitGroup) {
 		for {
 			m.checkNodes(ctx)
 			m.geoIP(ctx)
+			m.rebuildSnapshot()
 
 			select {
 			case <-ctx.Done():
@@ -344,16 +362,18 @@ func (m *Manager) Good(p *peer.Peer) {
 	}
 }
 
+// AllGoodNodes returns the cached snapshot's good nodes. The slice and its
+// elements are immutable; callers must not mutate them.
 func (m *Manager) AllGoodNodes() []*Node {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-	goodNodes := make([]*Node, 0, len(m.goodNodes))
-	for _, ip := range m.goodNodes {
-		goodNodes = append(goodNodes, m.nodes[ip])
+	if s := m.snap.Load(); s != nil {
+		return s.good
 	}
-	return goodNodes
+	return nil
 }
 
+// GetNode returns a copy of the live node for ip (so the caller can read it
+// without holding the lock or racing the crawler), whether it is currently
+// good, and whether it exists at all.
 func (m *Manager) GetNode(ip string) (*Node, bool, bool) {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
@@ -363,7 +383,30 @@ func (m *Manager) GetNode(ip string) (*Node, bool, bool) {
 		return nil, false, false
 	}
 
-	return node, node.good, true
+	cp := *node
+	return &cp, cp.good, true
+}
+
+// rebuildSnapshot recomputes the cached summary and good-node list and publishes
+// them atomically. Called once per crawl cycle so HTTP requests never trigger
+// the O(n log n) summary build (and never hold the read lock during it).
+func (m *Manager) rebuildSnapshot() {
+	m.mtx.RLock()
+	good := make([]*Node, 0, len(m.goodNodes))
+	for _, ip := range m.goodNodes {
+		cp := *m.nodes[ip] // copy so the snapshot is immutable
+		good = append(good, &cp)
+	}
+	summary := m.computeSummaryLocked()
+	m.mtx.RUnlock()
+
+	// Stable order independent of good-set churn, so pagination is consistent
+	// between requests.
+	slices.SortFunc(good, func(a, b *Node) int {
+		return strings.Compare(a.IP.String(), b.IP.String())
+	})
+
+	m.snap.Store(&snapshot{summary: summary, good: good})
 }
 
 type Count struct {
@@ -382,10 +425,17 @@ type Summary struct {
 	CountryCounts []Count
 }
 
+// GetSummary returns the cached summary from the most recent crawl cycle.
 func (m *Manager) GetSummary() Summary {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
+	if s := m.snap.Load(); s != nil {
+		return s.summary
+	}
+	return Summary{}
+}
 
+// computeSummaryLocked builds the summary from the live node set. The caller
+// must hold at least the read lock.
+func (m *Manager) computeSummaryLocked() Summary {
 	total := len(m.goodNodes)
 
 	var ip4, ip6 int
@@ -467,23 +517,18 @@ func (m *Manager) GetSummary() Summary {
 }
 
 func (m *Manager) PageOfNodes(first, last int) (int, []*Node) {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-
-	count := len(m.goodNodes)
+	var good []*Node
+	if s := m.snap.Load(); s != nil {
+		good = s.good
+	}
+	count := len(good)
 
 	// Clamp the requested range so pages beyond the end return an empty
 	// slice rather than panicking.
 	first = min(max(first, 0), count)
 	last = min(max(last, first), count)
 
-	keys := m.goodNodes[first:last]
-	toReturn := make([]*Node, 0, len(keys))
-	for _, key := range keys {
-		toReturn = append(toReturn, m.nodes[key])
-	}
-
-	return count, toReturn
+	return count, good[first:last]
 }
 
 func (m *Manager) deserializePeers() error {

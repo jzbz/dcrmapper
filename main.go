@@ -44,7 +44,7 @@ func run(ctx context.Context) error {
 	mgr.Start(ctx, &wg)
 
 	// Start HTTP server
-	err = server.Start(ctx, listen, domain, mgr, shutdownRequestChannel, &wg)
+	err = server.Start(ctx, listen, domain, mgr, shutdownRequestChannel, &wg, templatesFS, publicFS())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize server: %v\n", err)
 		requestShutdown()

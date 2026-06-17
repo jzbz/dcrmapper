@@ -141,15 +141,15 @@ sudo /usr/local/go/bin/go build -o /opt/dcrmapper/app/dcrmapper .
 sudo chown -R dcrmapper:dcrmapper /opt/dcrmapper
 ```
 
-> **Working directory matters.** The server loads its templates from
-> `templates/*` and serves assets from `./public/` using *relative* paths, so it
-> must always be started with its working directory set to the repo root
-> (`/opt/dcrmapper/app`). The systemd unit below handles this.
+The templates and static assets are **embedded into the binary** at build time
+(`go:embed`), so the compiled `dcrmapper` is self-contained and can run from any
+working directory. (The systemd unit below still sets `WorkingDirectory`, which
+is harmless.)
 
 The compiled Tailwind stylesheet (`public/css/tailwind.css`) is committed to the
-repo, so a normal deploy needs **no Node.js and no CSS build step**. You only
-need to rebuild it if you change templates or styles — see
-[§8](#8-rebuilding-the-css-optional).
+repo and embedded by the build, so a normal deploy needs **no Node.js and no CSS
+build step**. You only need to rebuild it if you change templates or styles —
+see [§8](#8-rebuilding-the-css-optional).
 
 ---
 

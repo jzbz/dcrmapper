@@ -1,5 +1,9 @@
 {{ template "header" . }}
 
+<link rel="stylesheet" href="{{ asset "/public/css/vendor/MarkerCluster-1.5.3.css" }}">
+<link rel="stylesheet" href="{{ asset "/public/css/vendor/MarkerCluster.Default-1.5.3.css" }}">
+<script src="{{ asset "/public/js/vendor/leaflet.markercluster-1.5.3.js" }}"></script>
+
 {{ template "summary" . }}
 
 <div class="card isolate overflow-hidden">
@@ -9,7 +13,7 @@
 <div id="stats" class="mt-8">
 
     <!-- Top 10 view (both boxes) -->
-    <div data-view="top10" class="stats-view grid grid-cols-1 gap-6 transition duration-300 ease-out lg:grid-cols-2">
+    <div data-view="top10" class="stats-view grid grid-cols-1 gap-6 transition duration-300 ease-out motion-reduce:transition-none lg:grid-cols-2">
 
         <!-- Top countries -->
         <section class="card p-5 sm:p-6">
@@ -58,7 +62,7 @@
     </div>
 
     <!-- All countries view (column-major: read straight down each column) -->
-    <section data-view="countries" class="stats-view card hidden translate-y-2 p-5 opacity-0 transition duration-300 ease-out sm:p-6">
+    <section data-view="countries" class="stats-view card hidden translate-y-2 p-5 opacity-0 transition duration-300 ease-out motion-reduce:transition-none sm:p-6">
         <div class="mb-4 flex items-baseline justify-between">
             <h2 class="text-lg font-semibold">All countries <span class="font-normal text-slate-400">({{ len .Summary.CountryCounts }})</span></h2>
             <button type="button" data-show="top10" class="text-sm font-medium text-dcr-green-dark hover:underline dark:text-dcr-green">&larr; Back to top 10</button>
@@ -75,7 +79,7 @@
     </section>
 
     <!-- All networks view -->
-    <section data-view="networks" class="stats-view card hidden translate-y-2 p-5 opacity-0 transition duration-300 ease-out sm:p-6">
+    <section data-view="networks" class="stats-view card hidden translate-y-2 p-5 opacity-0 transition duration-300 ease-out motion-reduce:transition-none sm:p-6">
         <div class="mb-4 flex items-baseline justify-between">
             <h2 class="text-lg font-semibold">All networks <span class="font-normal text-slate-400">({{ len .Summary.AS }})</span></h2>
             <button type="button" data-show="top10" class="text-sm font-medium text-dcr-green-dark hover:underline dark:text-dcr-green">&larr; Back to top 10</button>
@@ -147,14 +151,18 @@
         popupAnchor: [0, -14],
     });
 
+    // Cluster markers so the map stays responsive with hundreds of nodes.
+    const markers = L.markerClusterGroup({ chunkedLoading: true });
     fetch('/world_nodes')
         .then((res) => res.json())
         .then((nodes) => {
             (nodes || []).forEach((n) => {
-                L.marker([n.lat, n.lon], { icon: myIcon })
-                    .bindPopup('<a href="/node?ip=' + encodeURIComponent(n.ip) + '">' + n.ip + '</a>')
-                    .addTo(map);
+                markers.addLayer(
+                    L.marker([n.lat, n.lon], { icon: myIcon })
+                        .bindPopup('<a href="/node?ip=' + encodeURIComponent(n.ip) + '">' + n.ip + '</a>')
+                );
             });
+            map.addLayer(markers);
         });
 </script>
 

@@ -6,10 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"html/template"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
-	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,15 +21,35 @@ import (
 var amgr *crawler.Manager
 var domain string
 
+// staticFS is the embedded public/ tree, rooted so that the URL path
+// /public/css/x maps to the FS path css/x.
+var staticFS fs.FS
+
 const timeFormat = "02 Jan 2006 15:04 MST"
+
+// defaultAssetVersion is the cache-busting token used when an asset cannot be
+// hashed (e.g. missing file).
+const defaultAssetVersion = "dev"
 
 // assetVersions caches a content hash per static asset path so the asset() URLs
 // only change when the file's contents change. Computed lazily and cached for
-// the life of the process (assets do not change without a restart).
+// the life of the process (the embedded assets cannot change without a restart).
 var (
 	assetMu       sync.Mutex
 	assetVersions = map[string]string{}
 )
+
+// assetVersion returns a short content hash of the named file in fsys, or "dev"
+// if it cannot be read. Pure and side-effect free for testability.
+func assetVersion(fsys fs.FS, name string) string {
+	if fsys != nil {
+		if b, err := fs.ReadFile(fsys, name); err == nil {
+			sum := sha256.Sum256(b)
+			return hex.EncodeToString(sum[:])[:10]
+		}
+	}
+	return defaultAssetVersion
+}
 
 // assetURL appends a short content-hash query string to a static asset path so
 // browsers (and the long-lived CDN/proxy cache) re-fetch it whenever it changes,
@@ -42,21 +63,28 @@ func assetURL(webPath string) string {
 		return webPath + "?v=" + v
 	}
 
-	v := "dev"
-	if b, err := os.ReadFile("." + webPath); err == nil {
-		sum := sha256.Sum256(b)
-		v = hex.EncodeToString(sum[:])[:10]
-	} else {
-		log.Printf("asset %s: could not hash for cache-busting: %v", webPath, err)
+	v := assetVersion(staticFS, strings.TrimPrefix(webPath, "/public/"))
+	if v == defaultAssetVersion {
+		log.Printf("asset %s: could not hash for cache-busting", webPath)
 	}
 	assetVersions[webPath] = v
 	return webPath + "?v=" + v
 }
 
-func NewRouter() *gin.Engine {
-	// With release mode enabled, gin will only read template files once and cache them.
-	// With release mode disabled, templates will be reloaded on the fly.
+// securityHeaders sets conservative response headers on every request.
+func securityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Next()
+	}
+}
+
+// NewRouter builds the HTTP router, serving templates and static assets from the
+// provided (embedded) filesystems. static must be rooted at the public/ tree.
+func NewRouter(templates, static fs.FS) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
+	staticFS = static
 
 	router := gin.New()
 
@@ -64,15 +92,17 @@ func NewRouter() *gin.Engine {
 	// requests. Ensures a 500 response is sent to the client rather than
 	// sending no response at all.
 	router.Use(gin.Recovery())
+	router.Use(securityHeaders())
 
-	router.SetFuncMap(template.FuncMap{
+	funcMap := template.FuncMap{
 		"incr":  func(i int) int { return i + 1 },
 		"date":  func(t time.Time) string { return t.In(time.UTC).Format(timeFormat) },
 		"asset": assetURL,
-	})
+	}
+	tmpl := template.Must(template.New("").Funcs(funcMap).ParseFS(templates, "templates/*"))
+	router.SetHTMLTemplate(tmpl)
 
-	router.Static("/public", "./public/")
-	router.LoadHTMLGlob("templates/*")
+	router.StaticFS("/public", http.FS(static))
 
 	// Page routes.
 	router.GET("/", homepage)
@@ -90,7 +120,7 @@ func NewRouter() *gin.Engine {
 	return router
 }
 
-func Start(ctx context.Context, listen string, cookieDomain string, mgr *crawler.Manager, requestShutdownChan chan struct{}, shutdownWg *sync.WaitGroup) error {
+func Start(ctx context.Context, listen string, cookieDomain string, mgr *crawler.Manager, requestShutdownChan chan struct{}, shutdownWg *sync.WaitGroup, templates, static fs.FS) error {
 	amgr = mgr
 	domain = cookieDomain
 
@@ -103,9 +133,11 @@ func Start(ctx context.Context, listen string, cookieDomain string, mgr *crawler
 	log.Printf("Listening on %s", listen)
 
 	srv := http.Server{
-		Handler:      NewRouter(),
-		ReadTimeout:  5 * time.Second,  // slow requests should not hold connections opened
-		WriteTimeout: 60 * time.Second, // hung responses must die
+		Handler:           NewRouter(templates, static),
+		ReadTimeout:       5 * time.Second,  // slow requests should not hold connections opened
+		ReadHeaderTimeout: 5 * time.Second,  // bound slow header sends (slowloris)
+		WriteTimeout:      60 * time.Second, // hung responses must die
+		MaxHeaderBytes:    1 << 20,          // 1 MiB cap on request headers
 	}
 
 	// Add the graceful shutdown to the waitgroup.
