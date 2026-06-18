@@ -6,8 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TODO cache info used by api.
-
 type UA struct {
 	Rank        int    `json:"rank"`
 	AgentString string `json:"useragent"`

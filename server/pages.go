@@ -6,11 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TODO cache info used by gui.
-
-const (
-	appName = "Decred Mapper"
-)
+const appName = "Decred Mapper"
 
 // themeCookieMaxAge is how long the theme preference persists (one year).
 const themeCookieMaxAge = 365 * 24 * 60 * 60

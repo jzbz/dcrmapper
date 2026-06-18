@@ -70,6 +70,22 @@ func TestGetSummaryCounts(t *testing.T) {
 	}
 }
 
+func TestSummaryTieBreak(t *testing.T) {
+	// Equal counts must order deterministically by value (ascending), so the
+	// displayed list does not reshuffle between crawl cycles.
+	m := newTestManager([]*Node{
+		geoNode("1.1.1.1", "Zedland", "X"),
+		geoNode("2.2.2.2", "Andorra", "Y"),
+	})
+	cc := m.GetSummary().CountryCounts
+	if len(cc) != 2 {
+		t.Fatalf("want 2 countries, got %d", len(cc))
+	}
+	if cc[0].Value != "Andorra" || cc[1].Value != "Zedland" {
+		t.Errorf("tie-break order = [%q, %q], want [Andorra, Zedland]", cc[0].Value, cc[1].Value)
+	}
+}
+
 func TestPageOfNodesClamping(t *testing.T) {
 	m := newTestManager([]*Node{
 		geoNode("10.0.0.5", "", ""), // not routable, but PageOfNodes doesn't filter

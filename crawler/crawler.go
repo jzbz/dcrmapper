@@ -267,24 +267,30 @@ func (m *Manager) checkNodes(ctx context.Context) {
 }
 
 func (m *Manager) AddAddresses(addrs []net.IP) int {
-	var count int
-
-	m.mtx.Lock()
+	// Filter and stringify outside the lock so the critical section is just the
+	// map inserts. Remote peers can send up to ~1000 addresses at once, and many
+	// peers call this concurrently during a crawl.
+	type candidate struct {
+		ip  net.IP
+		key string
+	}
+	candidates := make([]candidate, 0, len(addrs))
 	for _, addr := range addrs {
-		if !isRoutable(addr) {
+		if isRoutable(addr) {
+			candidates = append(candidates, candidate{ip: addr, key: addr.String()})
+		}
+	}
+	if len(candidates) == 0 {
+		return 0
+	}
+
+	var count int
+	m.mtx.Lock()
+	for _, c := range candidates {
+		if _, exists := m.nodes[c.key]; exists {
 			continue
 		}
-		addrStr := addr.String()
-
-		_, exists := m.nodes[addrStr]
-		if exists {
-			continue
-		}
-		node := Node{
-			IP: addr,
-		}
-		m.nodes[addrStr] = &node
-
+		m.nodes[c.key] = &Node{IP: c.ip}
 		count++
 	}
 	m.mtx.Unlock()
@@ -391,13 +397,15 @@ func (m *Manager) GetNode(ip string) (*Node, bool, bool) {
 // them atomically. Called once per crawl cycle so HTTP requests never trigger
 // the O(n log n) summary build (and never hold the read lock during it).
 func (m *Manager) rebuildSnapshot() {
+	// Hold the lock only long enough to copy the good nodes; the (more
+	// expensive) sort and summary build then run on the immutable copies
+	// without blocking the crawler.
 	m.mtx.RLock()
 	good := make([]*Node, 0, len(m.goodNodes))
 	for _, ip := range m.goodNodes {
 		cp := *m.nodes[ip] // copy so the snapshot is immutable
 		good = append(good, &cp)
 	}
-	summary := m.computeSummaryLocked()
 	m.mtx.RUnlock()
 
 	// Stable order independent of good-set churn, so pagination is consistent
@@ -406,7 +414,7 @@ func (m *Manager) rebuildSnapshot() {
 		return strings.Compare(a.IP.String(), b.IP.String())
 	})
 
-	m.snap.Store(&snapshot{summary: summary, good: good})
+	m.snap.Store(&snapshot{summary: computeSummary(good), good: good})
 }
 
 type Count struct {
@@ -433,18 +441,27 @@ func (m *Manager) GetSummary() Summary {
 	return Summary{}
 }
 
-// computeSummaryLocked builds the summary from the live node set. The caller
-// must hold at least the read lock.
-func (m *Manager) computeSummaryLocked() Summary {
-	total := len(m.goodNodes)
+// byCount orders Counts by count descending, breaking ties by value so the
+// displayed order is deterministic across crawl cycles.
+func byCount(a, b Count) int {
+	if c := cmp.Compare(b.Count, a.Count); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.Value, b.Value)
+}
+
+// computeSummary builds the summary from an immutable slice of good nodes. It
+// takes no lock and does not touch shared state, so the (potentially expensive)
+// aggregation and sorting run outside the crawler's critical section.
+func computeSummary(good []*Node) Summary {
+	total := len(good)
 
 	var ip4, ip6 int
 	ua := make(map[string]int)
 	as := make(map[string]int)
 	country := make(map[string]int)
 
-	for _, ip := range m.goodNodes {
-		node := m.nodes[ip]
+	for _, node := range good {
 		if node.IP.To4() != nil {
 			ip4++
 		} else {
@@ -468,43 +485,33 @@ func (m *Manager) computeSummaryLocked() Summary {
 		return 100 * v / total
 	}
 
-	// Sort UserAgents by count, descending.
 	sortedUA := make([]Count, 0, len(ua))
 	for k, v := range ua {
 		sortedUA = append(sortedUA, Count{Value: k, Count: v})
 	}
-	slices.SortFunc(sortedUA, func(a, b Count) int { return cmp.Compare(b.Count, a.Count) })
+	slices.SortFunc(sortedUA, byCount)
 
-	// Sort AS by count, descending.
 	sortedAS := make([]Count, 0, len(as))
 	for k, v := range as {
-		sortedAS = append(sortedAS, Count{
-			Value:      k,
-			Count:      v,
-			AbsPercent: absPercent(v),
-		})
+		sortedAS = append(sortedAS, Count{Value: k, Count: v, AbsPercent: absPercent(v)})
 	}
-	slices.SortFunc(sortedAS, func(a, b Count) int { return cmp.Compare(b.Count, a.Count) })
+	slices.SortFunc(sortedAS, byCount)
 
-	// Sort Countries by count, descending. RelPercent is relative to the most
-	// populous country so the largest bar fills the row.
+	// RelPercent is relative to the most populous country so the largest bar
+	// fills its row.
 	var maxCountries int
 	for _, v := range country {
 		maxCountries = max(maxCountries, v)
 	}
 	sortedCountry := make([]Count, 0, len(country))
 	for k, v := range country {
-		c := Count{
-			Value:      k,
-			Count:      v,
-			AbsPercent: absPercent(v),
-		}
+		c := Count{Value: k, Count: v, AbsPercent: absPercent(v)}
 		if maxCountries > 0 {
 			c.RelPercent = 100 * v / maxCountries
 		}
 		sortedCountry = append(sortedCountry, c)
 	}
-	slices.SortFunc(sortedCountry, func(a, b Count) int { return cmp.Compare(b.Count, a.Count) })
+	slices.SortFunc(sortedCountry, byCount)
 
 	return Summary{
 		IP4:           ip4,
@@ -561,29 +568,28 @@ func (m *Manager) deserializePeers() error {
 }
 
 func (m *Manager) savePeers() {
+	// Marshal in memory under the lock, then do the slow disk I/O (write +
+	// rename) without it, so persistence never stalls the crawler on disk
+	// latency.
 	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-
-	// Write temporary peers file and then move it into place.
-	tmpfile := m.peersFile + ".new"
-	w, err := os.Create(tmpfile)
+	data, err := json.Marshal(m.nodes)
+	count := len(m.nodes)
+	m.mtx.RUnlock()
 	if err != nil {
-		log.Printf("Error opening file %s: %v", tmpfile, err)
+		log.Printf("Failed to encode peers: %v", err)
 		return
 	}
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(&m.nodes); err != nil {
-		log.Printf("Failed to encode file %s: %v", tmpfile, err)
-		return
-	}
-	if err := w.Close(); err != nil {
-		log.Printf("Error closing file %s: %v", tmpfile, err)
+
+	// Write a temporary file and then move it into place atomically.
+	tmpfile := m.peersFile + ".new"
+	if err := os.WriteFile(tmpfile, data, 0600); err != nil {
+		log.Printf("Error writing file %s: %v", tmpfile, err)
 		return
 	}
 	if err := os.Rename(tmpfile, m.peersFile); err != nil {
-		log.Printf("Error writing file %s: %v", m.peersFile, err)
+		log.Printf("Error renaming file %s: %v", m.peersFile, err)
 		return
 	}
 
-	log.Printf("%d nodes saved to %s", len(m.nodes), m.peersFile)
+	log.Printf("%d nodes saved to %s", count, m.peersFile)
 }
