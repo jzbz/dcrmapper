@@ -2,49 +2,49 @@
 
 {{ if .OK }}
 
-    <div class="mb-6 flex flex-wrap items-center gap-3">
-        <h1 class="font-mono text-2xl font-bold sm:text-3xl">{{ .Node.IP }}</h1>
+    <div class="node-head">
+        <h1>{{ .Node.IP }}</h1>
         {{ if .Good }}
             <span class="badge-online">Online</span>
         {{ else }}
             <span class="badge-offline">Offline</span>
-            <span class="text-sm text-slate-500 dark:text-slate-400"><em>Last online {{ date .Node.LastSuccess }}</em></span>
+            <span class="muted"><em>Last online {{ date .Node.LastSuccess }}</em></span>
         {{ end }}
     </div>
 
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <div class="node-grid">
 
-        <div class="space-y-6">
-            <section class="card overflow-hidden">
-                <table class="w-full text-left text-sm">
-                    <tbody class="divide-y divide-slate-100 dark:divide-white/5">
+        <div class="stack">
+            <section class="card clip">
+                <table class="table kv">
+                    <tbody>
                         <tr>
-                            <th class="w-40 px-4 py-3 font-medium text-slate-500 dark:text-slate-400">Status</th>
-                            <td class="px-4 py-3">
+                            <th>Status</th>
+                            <td>
                                 {{ if .Good }}<span class="badge-online">Online</span>
                                 {{ else }}<span class="badge-offline">Offline</span>{{ end }}
                             </td>
                         </tr>
                         <tr>
-                            <th class="px-4 py-3 font-medium text-slate-500 dark:text-slate-400">Last updated</th>
-                            <td class="px-4 py-3">{{ date .Node.LastAttempt }}</td>
+                            <th>Last updated</th>
+                            <td>{{ date .Node.LastAttempt }}</td>
                         </tr>
                         <tr>
-                            <th class="px-4 py-3 font-medium text-slate-500 dark:text-slate-400">User agent</th>
-                            <td class="px-4 py-3 font-mono">{{ .Node.UserAgent }}</td>
+                            <th>User agent</th>
+                            <td class="mono">{{ .Node.UserAgent }}</td>
                         </tr>
                     </tbody>
                 </table>
             </section>
 
             {{ with .Node.GeoData }}
-            <section class="card overflow-hidden">
-                <h2 class="border-b border-slate-200 px-4 py-3 text-sm font-semibold dark:border-white/10">Network</h2>
-                <table class="w-full text-left text-sm">
-                    <tbody class="divide-y divide-slate-100 dark:divide-white/5">
-                        <tr><th class="w-40 px-4 py-3 font-medium text-slate-500 dark:text-slate-400">ISP</th><td class="px-4 py-3">{{ .ISP }}</td></tr>
-                        <tr><th class="px-4 py-3 font-medium text-slate-500 dark:text-slate-400">Org</th><td class="px-4 py-3">{{ .Org }}</td></tr>
-                        <tr><th class="px-4 py-3 font-medium text-slate-500 dark:text-slate-400">AS</th><td class="px-4 py-3">{{ .AS }}</td></tr>
+            <section class="card clip">
+                <h2 class="panel-title">Network</h2>
+                <table class="table kv">
+                    <tbody>
+                        <tr><th>ISP</th><td>{{ .ISP }}</td></tr>
+                        <tr><th>Org</th><td>{{ .Org }}</td></tr>
+                        <tr><th>AS</th><td>{{ .AS }}</td></tr>
                     </tbody>
                 </table>
             </section>
@@ -52,15 +52,11 @@
         </div>
 
         {{ with .Node.GeoData }}
-        <section class="card isolate overflow-hidden">
+        <section class="card map-card">
             <div id="node-map"></div>
-            <div class="flex items-center justify-between gap-4 border-t border-slate-200 px-4 py-3 text-sm dark:border-white/10">
-                <div>
-                    {{ .City }}<br/>{{ .Region }}<br/>{{ .Country }}
-                </div>
-                <div class="text-right text-slate-500 dark:text-slate-400">
-                    Lat: {{ .Lat }}<br/>Lon: {{ .Lon }}
-                </div>
+            <div class="map-meta">
+                <div>{{ .City }}<br/>{{ .Region }}<br/>{{ .Country }}</div>
+                <div class="coords">Lat: {{ .Lat }}<br/>Lon: {{ .Lon }}</div>
             </div>
         </section>
         {{ end }}
@@ -82,7 +78,7 @@
 
 {{ else }}
 
-    <div class="rounded-lg border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">
+    <div class="alert alert-error">
         No node found with IP {{ .SearchIP }}
     </div>
 

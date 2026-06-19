@@ -6,34 +6,32 @@
 
 {{ template "summary" . }}
 
-<div class="card isolate overflow-hidden">
+<div class="card map-card">
     <div id="world-map"></div>
 </div>
 
-<div id="stats" class="mt-8">
+<div id="stats">
 
-    <!-- Top 10 view (both boxes) -->
-    <div data-view="top10" class="stats-view grid grid-cols-1 gap-6 transition duration-300 ease-out motion-reduce:transition-none lg:grid-cols-2">
+    <!-- Top 10 view (both panels) -->
+    <div data-view="top10" class="stats-view stats-top10">
 
         <!-- Top countries -->
-        <section class="card p-5 sm:p-6">
-            <div class="mb-4 flex items-baseline justify-between">
-                <h2 class="text-lg font-semibold">Top 10 countries</h2>
-                <button type="button" data-show="countries" class="text-sm font-medium text-dcr-green-dark hover:underline dark:text-dcr-green">See all {{ len .Summary.CountryCounts }} &rarr;</button>
+        <section class="card panel">
+            <div class="panel-head">
+                <h2>Top 10 countries</h2>
+                <button type="button" class="stats-link" data-show="countries">See all {{ len .Summary.CountryCounts }} &rarr;</button>
             </div>
-            <ol class="space-y-3">
+            <ol class="rank-list">
                 {{ range $rank, $count := .Summary.CountryCounts }}
                     {{ if lt $rank 10 }}
-                    <li class="grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 text-sm">
-                        <span class="text-right tabular-nums text-slate-400">{{ incr $rank }}</span>
-                        <div>
-                            <div class="flex items-baseline justify-between gap-2">
-                                <span class="font-medium">{{ $count.Value }}</span>
-                                <span class="tabular-nums text-slate-500 dark:text-slate-400">{{ $count.Count }} <span class="text-slate-400">({{ $count.AbsPercent }}%)</span></span>
+                    <li class="rank-row">
+                        <span class="rank-num">{{ incr $rank }}</span>
+                        <div class="rank-main">
+                            <div class="rank-line">
+                                <span class="rank-name">{{ $count.Value }}</span>
+                                <span class="rank-count">{{ $count.Count }} <span class="pct">({{ $count.AbsPercent }}%)</span></span>
                             </div>
-                            <div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
-                                <div class="h-full rounded-full bg-dcr-green" style="width: {{ $count.RelPercent }}%"></div>
-                            </div>
+                            <div class="bar"><div class="bar-fill" style="width: {{ $count.RelPercent }}%"></div></div>
                         </div>
                     </li>
                     {{ end }}
@@ -42,18 +40,18 @@
         </section>
 
         <!-- Top networks -->
-        <section class="card p-5 sm:p-6">
-            <div class="mb-4 flex items-baseline justify-between">
-                <h2 class="text-lg font-semibold">Top 10 networks</h2>
-                <button type="button" data-show="networks" class="text-sm font-medium text-dcr-green-dark hover:underline dark:text-dcr-green">See all {{ len .Summary.AS }} &rarr;</button>
+        <section class="card panel">
+            <div class="panel-head">
+                <h2>Top 10 networks</h2>
+                <button type="button" class="stats-link" data-show="networks">See all {{ len .Summary.AS }} &rarr;</button>
             </div>
-            <ol class="space-y-2.5">
+            <ol class="rank-list tight">
                 {{ range $rank, $count := .Summary.AS }}
                     {{ if lt $rank 10 }}
-                    <li class="grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 text-sm">
-                        <span class="text-right tabular-nums text-slate-400">{{ incr $rank }}</span>
-                        <span class="truncate font-medium" title="{{ $count.Value }}">{{ $count.Value }}</span>
-                        <span class="tabular-nums text-slate-500 dark:text-slate-400">{{ $count.Count }} <span class="text-slate-400">({{ $count.AbsPercent }}%)</span></span>
+                    <li class="rank-row">
+                        <span class="rank-num">{{ incr $rank }}</span>
+                        <span class="rank-name truncate" title="{{ $count.Value }}">{{ $count.Value }}</span>
+                        <span class="rank-count">{{ $count.Count }} <span class="pct">({{ $count.AbsPercent }}%)</span></span>
                     </li>
                     {{ end }}
                 {{ end }}
@@ -61,35 +59,35 @@
         </section>
     </div>
 
-    <!-- All countries view (column-major: read straight down each column) -->
-    <section data-view="countries" class="stats-view card hidden translate-y-2 p-5 opacity-0 transition duration-300 ease-out motion-reduce:transition-none sm:p-6">
-        <div class="mb-4 flex items-baseline justify-between">
-            <h2 class="text-lg font-semibold">All countries <span class="font-normal text-slate-400">({{ len .Summary.CountryCounts }})</span></h2>
-            <button type="button" data-show="top10" class="text-sm font-medium text-dcr-green-dark hover:underline dark:text-dcr-green">&larr; Back to top 10</button>
+    <!-- All countries (column-major: read straight down each column) -->
+    <section data-view="countries" class="stats-view card panel is-hidden is-faded">
+        <div class="panel-head">
+            <h2>All countries <span class="count">({{ len .Summary.CountryCounts }})</span></h2>
+            <button type="button" class="stats-link" data-show="top10">&larr; Back to top 10</button>
         </div>
-        <ol class="columns-2 gap-x-8 sm:columns-3 lg:columns-4">
+        <ol class="col-list">
             {{ range $rank, $count := .Summary.CountryCounts }}
-            <li class="flex items-baseline gap-2 break-inside-avoid py-1 text-sm">
-                <span class="w-6 shrink-0 text-right tabular-nums text-slate-400">{{ incr $rank }}</span>
-                <span class="flex-1 truncate" title="{{ $count.Value }}">{{ $count.Value }}</span>
-                <span class="shrink-0 tabular-nums text-slate-400">{{ $count.Count }}</span>
+            <li class="col-item">
+                <span class="rank-num">{{ incr $rank }}</span>
+                <span class="name" title="{{ $count.Value }}">{{ $count.Value }}</span>
+                <span class="cnt">{{ $count.Count }}</span>
             </li>
             {{ end }}
         </ol>
     </section>
 
-    <!-- All networks view -->
-    <section data-view="networks" class="stats-view card hidden translate-y-2 p-5 opacity-0 transition duration-300 ease-out motion-reduce:transition-none sm:p-6">
-        <div class="mb-4 flex items-baseline justify-between">
-            <h2 class="text-lg font-semibold">All networks <span class="font-normal text-slate-400">({{ len .Summary.AS }})</span></h2>
-            <button type="button" data-show="top10" class="text-sm font-medium text-dcr-green-dark hover:underline dark:text-dcr-green">&larr; Back to top 10</button>
+    <!-- All networks -->
+    <section data-view="networks" class="stats-view card panel is-hidden is-faded">
+        <div class="panel-head">
+            <h2>All networks <span class="count">({{ len .Summary.AS }})</span></h2>
+            <button type="button" class="stats-link" data-show="top10">&larr; Back to top 10</button>
         </div>
-        <ol class="columns-1 gap-x-8 sm:columns-2 lg:columns-3">
+        <ol class="col-list networks">
             {{ range $rank, $count := .Summary.AS }}
-            <li class="flex items-baseline gap-2 break-inside-avoid py-1 text-sm">
-                <span class="w-6 shrink-0 text-right tabular-nums text-slate-400">{{ incr $rank }}</span>
-                <span class="flex-1 truncate" title="{{ $count.Value }}">{{ $count.Value }}</span>
-                <span class="shrink-0 tabular-nums text-slate-400">{{ $count.Count }}</span>
+            <li class="col-item">
+                <span class="rank-num">{{ incr $rank }}</span>
+                <span class="name" title="{{ $count.Value }}">{{ $count.Value }}</span>
+                <span class="cnt">{{ $count.Count }}</span>
             </li>
             {{ end }}
         </ol>
@@ -105,18 +103,18 @@
 
         function showView(name) {
             if (animating) return;
-            const current = stats.querySelector('.stats-view:not(.hidden)');
+            const current = stats.querySelector('.stats-view:not(.is-hidden)');
             const target = stats.querySelector('.stats-view[data-view="' + name + '"]');
             if (!target || current === target) return;
             animating = true;
 
             // Fade the current view out, swap, then fade the target in.
-            current.classList.add('opacity-0', 'translate-y-2');
+            current.classList.add('is-faded');
             setTimeout(function () {
-                current.classList.add('hidden');
-                target.classList.remove('hidden');
+                current.classList.add('is-hidden');
+                target.classList.remove('is-hidden');
                 void target.offsetWidth; // force reflow so the fade-in transitions
-                target.classList.remove('opacity-0', 'translate-y-2');
+                target.classList.remove('is-faded');
                 setTimeout(function () { animating = false; }, 300);
             }, 300);
         }

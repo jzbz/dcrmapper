@@ -1,6 +1,6 @@
 {{define "header"}}
 <!DOCTYPE html>
-<html lang="en" class="h-full {{ if eq .Theme "dark" }}dark{{ end }}">
+<html lang="en" class="{{ if eq .Theme "dark" }}dark{{ end }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
@@ -8,48 +8,48 @@
         <title>{{ .AppName }}</title>
 
         <link rel="icon" type="image/svg+xml" href="{{ asset "/public/images/dcr.svg" }}">
-        <link rel="stylesheet" href="{{ asset "/public/css/tailwind.css" }}">
+        <link rel="stylesheet" href="{{ asset "/public/css/app.css" }}">
         <link rel="stylesheet" href="{{ asset "/public/css/vendor/leaflet-1.9.4.css" }}"/>
         <script src="{{ asset "/public/js/vendor/leaflet-1.9.4.min.js" }}"></script>
     </head>
 
-    <body class="flex min-h-full flex-col bg-slate-50 text-slate-800 antialiased dark:bg-dcr-navy dark:text-slate-200">
-        <nav class="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-white/10 dark:bg-dcr-navy/90">
-            <div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6">
-                <a href="/" class="flex items-center gap-2 text-lg font-semibold tracking-tight">
-                    <img src="{{ asset "/public/images/dcr.svg" }}" alt="Decred logo" class="h-7 w-7 rounded" width="28" height="28">
+    <body>
+        <nav class="site-nav">
+            <div class="nav-inner">
+                <a href="/" class="brand">
+                    <img src="{{ asset "/public/images/dcr.svg" }}" alt="Decred logo" width="28" height="28">
                     {{ .AppName }}
                 </a>
 
-                <ul class="flex items-center gap-1 sm:gap-2">
+                <ul class="nav-links">
                     <li><a class="nav-link {{ if eq .ActivePage "WorldMap" }}nav-link-active{{ end }}" href="/">World Map</a></li>
                     <li><a class="nav-link {{ if eq .ActivePage "AllNodes" }}nav-link-active{{ end }}" href="/all_nodes">All Nodes</a></li>
                     <li><a class="nav-link {{ if eq .ActivePage "UserAgents" }}nav-link-active{{ end }}" href="/user_agents">User Agents</a></li>
                 </ul>
 
-                <div class="flex flex-1 items-center justify-end gap-2">
-                    <form autocomplete="off" method="GET" action="/node" class="flex items-center gap-2">
-                        <input class="input w-32 sm:w-44" name="ip" required placeholder="IP search" />
+                <div class="nav-actions">
+                    <form autocomplete="off" method="GET" action="/node" class="search-form">
+                        <input class="input" name="ip" required placeholder="IP search" />
                         <button class="btn-primary" type="submit">Search</button>
                     </form>
 
                     {{ if eq .Theme "dark" }}
-                    <a class="btn-ghost px-2.5" href="?{{ with .SearchIP }}ip={{ . }}&{{ end }}theme=light" title="Switch to light theme" aria-label="Switch to light theme">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                    <a class="btn-ghost btn-icon" href="?{{ with .SearchIP }}ip={{ . }}&{{ end }}theme=light" title="Switch to light theme" aria-label="Switch to light theme">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
                     </a>
                     {{ else }}
-                    <a class="btn-ghost px-2.5" href="?{{ with .SearchIP }}ip={{ . }}&{{ end }}theme=dark" title="Switch to dark theme" aria-label="Switch to dark theme">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                    <a class="btn-ghost btn-icon" href="?{{ with .SearchIP }}ip={{ . }}&{{ end }}theme=dark" title="Switch to dark theme" aria-label="Switch to dark theme">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                     </a>
                     {{ end }}
                 </div>
             </div>
         </nav>
 
-        <main class="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+        <main class="container">
 
             <noscript>
-                <div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
+                <div class="alert alert-warn">
                     JavaScript is disabled! Some site features will not work.
                 </div>
             </noscript>

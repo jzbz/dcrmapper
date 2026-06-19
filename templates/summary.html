@@ -1,35 +1,30 @@
 {{ define "summary" }}
 
-<section class="mb-8">
-    <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">
-        <span class="text-dcr-green-dark dark:text-dcr-green">{{ .Summary.GoodCount }}</span>
-        Decred nodes online
-    </h1>
-    <p class="mt-3 max-w-2xl text-slate-600 dark:text-slate-400">
+<section class="summary">
+    <h1><span class="count">{{ .Summary.GoodCount }}</span> Decred nodes online</h1>
+    <p class="lead">
         {{ .AppName }} continually crawls the Decred network and attempts to
         contact every public node. There are currently
-        <span class="font-semibold text-slate-800 dark:text-slate-200">{{ .Summary.GoodCount }}</span>
-        reachable public nodes across
-        <span class="font-semibold text-slate-800 dark:text-slate-200">{{ len .Summary.CountryCounts }}</span>
-        countries.
+        <strong>{{ .Summary.GoodCount }}</strong> reachable public nodes across
+        <strong>{{ len .Summary.CountryCounts }}</strong> countries.
     </p>
 
-    <dl class="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div class="card p-4">
-            <dt class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Reachable</dt>
-            <dd class="mt-1 text-2xl font-semibold">{{ .Summary.GoodCount }}</dd>
+    <dl class="stat-grid">
+        <div class="card stat">
+            <dt class="stat-label">Reachable</dt>
+            <dd class="stat-value">{{ .Summary.GoodCount }}</dd>
         </div>
-        <div class="card p-4">
-            <dt class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Countries</dt>
-            <dd class="mt-1 text-2xl font-semibold">{{ len .Summary.CountryCounts }}</dd>
+        <div class="card stat">
+            <dt class="stat-label">Countries</dt>
+            <dd class="stat-value">{{ len .Summary.CountryCounts }}</dd>
         </div>
-        <div class="card p-4">
-            <dt class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">IPv4</dt>
-            <dd class="mt-1 text-2xl font-semibold">{{ .Summary.IP4 }}</dd>
+        <div class="card stat">
+            <dt class="stat-label">IPv4</dt>
+            <dd class="stat-value">{{ .Summary.IP4 }}</dd>
         </div>
-        <div class="card p-4">
-            <dt class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">IPv6</dt>
-            <dd class="mt-1 text-2xl font-semibold">{{ .Summary.IP6 }}</dd>
+        <div class="card stat">
+            <dt class="stat-label">IPv6</dt>
+            <dd class="stat-value">{{ .Summary.IP6 }}</dd>
         </div>
     </dl>
 </section>

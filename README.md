@@ -16,17 +16,17 @@ go run . [-testnet] [-listen 127.0.0.1:8111] [-domain localhost]
 Common tasks are wrapped in a `Makefile` — run `make help` to list them:
 
 ```sh
-make run        # build the CSS (if stale) and the binary, then start the server
-make css-watch  # rebuild the stylesheet on every template change
-make check      # gofmt, go vet, golangci-lint and tests (the pre-commit gate)
+make run    # build the binary and start the server
+make check  # gofmt, go vet, golangci-lint and tests (the pre-commit gate)
 ```
 
-`make tools` downloads the pinned [Tailwind](https://tailwindcss.com/) standalone
-CLI into `./bin` (no Node.js required); the CSS targets fetch it automatically.
+There is no build step beyond `go build`: the templates and static assets are
+embedded into the binary with `go:embed`, so the compiled `dcrmapper` is
+self-contained and runs from any directory.
 
 ## Frontend
 
-The UI is styled with [Tailwind CSS](https://tailwindcss.com/). The compiled
-stylesheet at `public/css/tailwind.css` is committed, so no build step is needed
-just to run the server. After changing classes in `templates/` or editing
-`tailwind.input.css`, rebuild it with `make css`.
+The UI is plain HTML templates (`templates/`) styled by a single hand-authored
+stylesheet, [`public/css/app.css`](public/css/app.css) — no CSS framework and no
+build step. Light/dark theming is driven by CSS custom properties; just edit the
+file directly.

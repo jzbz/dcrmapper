@@ -146,10 +146,9 @@ The templates and static assets are **embedded into the binary** at build time
 working directory. (The systemd unit below still sets `WorkingDirectory`, which
 is harmless.)
 
-The compiled Tailwind stylesheet (`public/css/tailwind.css`) is committed to the
-repo and embedded by the build, so a normal deploy needs **no Node.js and no CSS
-build step**. You only need to rebuild it if you change templates or styles —
-see [§8](#8-rebuilding-the-css-optional).
+The UI uses a single hand-authored stylesheet (`public/css/app.css`) — no CSS
+framework and **no build step of any kind** beyond `go build`. The whole deploy
+is just compiling the Go binary.
 
 ---
 
@@ -254,23 +253,6 @@ sudo systemctl restart dcrmapper
 
 The node cache in `/opt/dcrmapper/.dcrmapper/` persists across restarts, so the
 map repopulates almost instantly after an update.
-
----
-
-## 9. Rebuilding the CSS (optional)
-
-Only needed if you edit `templates/` or `tailwind.input.css`. No Node.js
-required — use the Tailwind standalone CLI:
-
-```sh
-cd /opt/dcrmapper/app
-curl -sL https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 -o /tmp/tailwindcss
-chmod +x /tmp/tailwindcss
-sudo -u dcrmapper /tmp/tailwindcss -i tailwind.input.css -o public/css/tailwind.css --minify
-sudo systemctl restart dcrmapper
-```
-
-Then commit the regenerated `public/css/tailwind.css`.
 
 ---
 
