@@ -50,7 +50,9 @@ func (m *Manager) geoIP(ctx context.Context) {
 	m.mtx.RLock()
 	toFind := make([]string, 0, len(m.nodes))
 	for ip, node := range m.nodes {
-		if node.GeoData == nil {
+		// Onion nodes have no IP to geolocate; skip them so their .onion host is
+		// never sent to the geo API (where it would just fail).
+		if node.GeoData == nil && !node.IsOnion() {
 			toFind = append(toFind, ip)
 		}
 	}

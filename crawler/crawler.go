@@ -18,6 +18,7 @@ import (
 	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/dcrd/peer/v3"
 	"github.com/decred/dcrd/wire"
+	"github.com/decred/go-socks/socks"
 )
 
 const (
@@ -35,12 +36,22 @@ const (
 	// getaddr.
 	nodeTimeout = time.Second * 10
 
+	// onionTimeout is the per-action timeout for onion peers. Tor circuit
+	// construction and rendezvous routinely take far longer than a direct TCP
+	// dial, so onion probes get a more generous budget than clearnet ones.
+	onionTimeout = time.Second * 30
+
 	// crawlInterval is how often the full crawl + geolocation cycle runs.
 	crawlInterval = time.Minute * 5
 
-	// maxConcurrentChecks caps the number of peers contacted simultaneously
-	// during a crawl.
+	// maxConcurrentChecks caps the number of clearnet peers contacted
+	// simultaneously during a crawl.
 	maxConcurrentChecks = 1000
+
+	// maxConcurrentOnion caps simultaneous onion probes. They all share a
+	// single Tor instance, which cannot build anywhere near maxConcurrentChecks
+	// circuits at once, so onion dials use their own much smaller budget.
+	maxConcurrentOnion = 8
 )
 
 type Manager struct {
@@ -50,6 +61,13 @@ type Manager struct {
 	nodes     map[string]*Node
 	goodNodes []string
 	peersFile string
+
+	// proxyAddr is the SOCKS5 proxy address (e.g. arti/tor) used to reach onion
+	// peers, and proxy is the dialer built from it. Both are nil/empty when no
+	// proxy was configured, in which case onion nodes are never seeded or
+	// probed.
+	proxyAddr string
+	proxy     *socks.Proxy
 
 	// snap holds an immutable, point-in-time view of the crawl results,
 	// rebuilt once per crawl cycle and published atomically. HTTP handlers read
@@ -65,7 +83,11 @@ type snapshot struct {
 	good    []*Node // good nodes, copied and sorted by IP for stable pagination
 }
 
-func New(homeDir string, params *chaincfg.Params, seedPeer []string) (*Manager, error) {
+// New builds a crawl Manager. proxyAddr, when non-empty, is the SOCKS5 proxy
+// (arti or tor) used to reach onion peers; onionSeeds are bootstrap v3 .onion
+// hosts to probe through it. Onion seeds are ignored when no proxy is given,
+// since onion addresses are unreachable without one.
+func New(homeDir string, params *chaincfg.Params, seedPeer []string, proxyAddr string, onionSeeds []string) (*Manager, error) {
 	dataDir := filepath.Join(homeDir, params.Name)
 	err := os.MkdirAll(dataDir, 0700)
 	if err != nil {
@@ -75,6 +97,13 @@ func New(homeDir string, params *chaincfg.Params, seedPeer []string) (*Manager, 
 		netParams: params,
 		nodes:     make(map[string]*Node),
 		peersFile: filepath.Join(dataDir, peersFilename),
+		proxyAddr: proxyAddr,
+	}
+
+	if proxyAddr != "" {
+		// TorIsolation gives each probe its own circuit so a single slow or
+		// hostile onion peer cannot stall or correlate the others.
+		amgr.proxy = &socks.Proxy{Addr: proxyAddr, TorIsolation: true}
 	}
 
 	var seedIPs []net.IP
@@ -94,6 +123,14 @@ func New(homeDir string, params *chaincfg.Params, seedPeer []string) (*Manager, 
 	}
 
 	amgr.AddAddresses(seedIPs)
+
+	if amgr.proxy != nil {
+		if added := amgr.AddOnionAddresses(onionSeeds); added > 0 {
+			log.Printf("Seeded %d onion addresses", added)
+		}
+	} else if len(onionSeeds) > 0 {
+		log.Printf("Ignoring %d onion seed(s): no --proxy configured", len(onionSeeds))
+	}
 
 	// Initialize good list.
 	now := time.Now()
@@ -151,7 +188,7 @@ func (m *Manager) Start(ctx context.Context, shutdownWg *sync.WaitGroup) {
 	}()
 }
 
-func (m *Manager) testPeer(ctx context.Context, ip string) {
+func (m *Manager) testPeer(ctx context.Context, t target) {
 	onaddr := make(chan struct{}, 1)
 	verack := make(chan struct{}, 1)
 
@@ -190,19 +227,30 @@ func (m *Manager) testPeer(ctx context.Context, ip string) {
 		},
 	}
 
-	host := net.JoinHostPort(ip, m.netParams.DefaultPort)
-	p, err := peer.NewOutboundPeer(&config, host)
+	// Onion dials go through the SOCKS proxy. Setting Proxy stops the peer from
+	// advertising a routable local address, and HostToNetAddress lets it accept
+	// the non-IP .onion host while building the version message.
+	if t.onion {
+		config.Proxy = m.proxyAddr
+		config.HostToNetAddress = onionHostToNetAddress
+	}
+
+	timeout := nodeTimeout
+	if t.onion {
+		timeout = onionTimeout
+	}
+
+	p, err := peer.NewOutboundPeer(&config, t.dialAddr)
 	if err != nil {
-		m.Bad(ip, "outbound peer error", err)
+		m.Bad(t.key, "outbound peer error", err)
 		return
 	}
 
-	ctxTimeout, cancel := context.WithTimeout(ctx, nodeTimeout)
+	ctxTimeout, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	var dialer net.Dialer
-	conn, err := dialer.DialContext(ctxTimeout, "tcp", p.Addr())
+	conn, err := m.dial(ctxTimeout, t, p.Addr())
 	if err != nil {
-		m.Bad(ip, "dial timeout error", err)
+		m.Bad(t.key, "dial timeout error", err)
 		return
 	}
 	p.AssociateConnection(conn)
@@ -211,11 +259,11 @@ func (m *Manager) testPeer(ctx context.Context, ip string) {
 	// Wait for the verack message.
 	select {
 	case <-verack:
-		m.Good(p)
+		m.Good(t.key, p)
 		// Ask peer for some addresses.
 		p.QueueMessage(wire.NewMsgGetAddr(), nil)
-	case <-time.After(nodeTimeout):
-		m.Bad(ip, "verack timeout", nil)
+	case <-time.After(timeout):
+		m.Bad(t.key, "verack timeout", nil)
 		return
 	case <-ctx.Done():
 		// App shutting down.
@@ -224,25 +272,43 @@ func (m *Manager) testPeer(ctx context.Context, ip string) {
 
 	select {
 	case <-onaddr:
-	case <-time.After(nodeTimeout):
+	case <-time.After(timeout):
 	case <-ctx.Done():
 	}
 }
 
+// dial opens a connection to the target, routing onion targets through the
+// SOCKS proxy and clearnet targets directly.
+func (m *Manager) dial(ctx context.Context, t target, addr string) (net.Conn, error) {
+	if t.onion {
+		return m.proxy.DialContext(ctx, "tcp", addr)
+	}
+	var dialer net.Dialer
+	return dialer.DialContext(ctx, "tcp", addr)
+}
+
 func (m *Manager) checkNodes(ctx context.Context) {
 	for {
-		ips := m.StaleAddresses()
-		if len(ips) == 0 {
+		targets := m.staleTargets()
+		if len(targets) == 0 {
 			log.Println("No stale addresses")
 			return
 		}
 
-		log.Printf("Checking %d stale addresses", len(ips))
+		log.Printf("Checking %d stale addresses", len(targets))
 
-		// Test peers concurrently, capped by a semaphore.
-		sem := make(chan struct{}, maxConcurrentChecks)
+		// Test peers concurrently. Clearnet and onion probes draw on separate
+		// semaphores so the small onion budget (one shared Tor instance) never
+		// throttles the much larger clearnet crawl, and vice versa.
+		clearSem := make(chan struct{}, maxConcurrentChecks)
+		onionSem := make(chan struct{}, maxConcurrentOnion)
 		var wg sync.WaitGroup
-		for _, ip := range ips {
+		for _, t := range targets {
+			sem := clearSem
+			if t.onion {
+				sem = onionSem
+			}
+
 			select {
 			case <-ctx.Done():
 				wg.Wait()
@@ -251,11 +317,11 @@ func (m *Manager) checkNodes(ctx context.Context) {
 			}
 
 			wg.Add(1)
-			go func(ip string) {
+			go func(t target, sem chan struct{}) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				m.testPeer(ctx, ip)
-			}(ip)
+				m.testPeer(ctx, t)
+			}(t, sem)
 		}
 		wg.Wait()
 
@@ -298,29 +364,97 @@ func (m *Manager) AddAddresses(addrs []net.IP) int {
 	return count
 }
 
-// StaleAddresses returns IPs that need to be tested again.
-func (m *Manager) StaleAddresses() []string {
+// target is a single node to probe in a crawl cycle. It is resolved from the
+// node map under lock so testPeer never has to touch shared state to learn how
+// to reach a node.
+type target struct {
+	key      string // map key, i.e. node.Address()
+	dialAddr string // host:port to dial
+	onion    bool   // reach via the SOCKS proxy rather than a direct dial
+}
+
+// staleTargets returns the nodes that need to be tested again, with the dial
+// information needed to reach each one. Onion nodes are skipped when no proxy is
+// configured, since they are unreachable without one.
+func (m *Manager) staleTargets() []target {
 	now := time.Now()
 
 	m.mtx.RLock()
-	addrs := make([]string, 0, len(m.nodes))
-	for _, node := range m.nodes {
+	defer m.mtx.RUnlock()
+
+	targets := make([]target, 0, len(m.nodes))
+	for key, node := range m.nodes {
 		if now.Sub(node.LastAttempt) < staleTimeout {
 			continue
 		}
 
-		addrs = append(addrs, node.IP.String())
-	}
-	m.mtx.RUnlock()
+		if node.IsOnion() {
+			if m.proxy == nil {
+				continue
+			}
+			targets = append(targets, target{
+				key:      key,
+				dialAddr: net.JoinHostPort(node.Onion, m.netParams.DefaultPort),
+				onion:    true,
+			})
+			continue
+		}
 
-	return addrs
+		targets = append(targets, target{
+			key:      key,
+			dialAddr: net.JoinHostPort(node.IP.String(), m.netParams.DefaultPort),
+		})
+	}
+
+	return targets
 }
 
-func (m *Manager) Bad(ip, reason string, err error) {
+// AddOnionAddresses seeds v3 .onion hosts into the node map, keyed by hostname.
+// A trailing :port is accepted but ignored; like clearnet nodes, onion nodes
+// are dialed on the network's default port. Malformed addresses are skipped. It
+// returns the number of new nodes added.
+func (m *Manager) AddOnionAddresses(hosts []string) int {
+	type candidate struct{ host string }
+	candidates := make([]candidate, 0, len(hosts))
+	for _, h := range hosts {
+		host := strings.ToLower(strings.TrimSpace(h))
+		if host == "" {
+			continue
+		}
+		// Tolerate an explicit port; the dial always uses the default port.
+		if hostOnly, _, err := net.SplitHostPort(host); err == nil {
+			host = hostOnly
+		}
+		if !isOnionV3(host) {
+			log.Printf("Skipping invalid onion seed %q", h)
+			continue
+		}
+		candidates = append(candidates, candidate{host: host})
+	}
+	if len(candidates) == 0 {
+		return 0
+	}
+
+	var count int
+	m.mtx.Lock()
+	for _, c := range candidates {
+		if _, exists := m.nodes[c.host]; exists {
+			continue
+		}
+		m.nodes[c.host] = &Node{Onion: c.host}
+		count++
+	}
+	m.mtx.Unlock()
+
+	return count
+}
+
+// Bad records a failed probe of the node stored under key (its Address).
+func (m *Manager) Bad(key, reason string, err error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	node, ok := m.nodes[ip]
+	node, ok := m.nodes[key]
 	if !ok {
 		return
 	}
@@ -332,25 +466,26 @@ func (m *Manager) Bad(ip, reason string, err error) {
 	}
 	node.good = false
 
-	if i := slices.Index(m.goodNodes, ip); i != -1 {
+	if i := slices.Index(m.goodNodes, key); i != -1 {
 		m.goodNodes[i] = m.goodNodes[len(m.goodNodes)-1]
 		m.goodNodes = m.goodNodes[:len(m.goodNodes)-1]
 	}
-	log.Printf("Removed bad peer, reason: %q, IP %s, err: %v\n", reason, ip, err)
+	log.Printf("Removed bad peer, reason: %q, addr %s, err: %v\n", reason, key, err)
 }
 
-func (m *Manager) Good(p *peer.Peer) {
+// Good records a successful handshake with the node stored under key (its
+// Address). key, rather than the peer's advertised address, is authoritative
+// because onion peers have only a placeholder NetAddress.
+func (m *Manager) Good(key string, p *peer.Peer) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	peerIP := p.NA().IP.String()
-
-	node, exists := m.nodes[peerIP]
+	node, exists := m.nodes[key]
 	if !exists {
-		// Should be impossible since we only dial IPs from the map, but a
+		// Should be impossible since we only dial addresses from the map, but a
 		// panic here would take down the entire service from a background
 		// goroutine.
-		log.Printf("Good called for unknown peer %s", peerIP)
+		log.Printf("Good called for unknown peer %s", key)
 		return
 	}
 
@@ -364,7 +499,7 @@ func (m *Manager) Good(p *peer.Peer) {
 	// Add to the good set if not already a member.
 	if !node.good {
 		node.good = true
-		m.goodNodes = append(m.goodNodes, peerIP)
+		m.goodNodes = append(m.goodNodes, key)
 	}
 }
 
@@ -409,9 +544,10 @@ func (m *Manager) rebuildSnapshot() {
 	m.mtx.RUnlock()
 
 	// Stable order independent of good-set churn, so pagination is consistent
-	// between requests.
+	// between requests. Sort by Address so onion nodes (which have no IP) order
+	// deterministically alongside clearnet ones.
 	slices.SortFunc(good, func(a, b *Node) int {
-		return strings.Compare(a.IP.String(), b.IP.String())
+		return strings.Compare(a.Address(), b.Address())
 	})
 
 	m.snap.Store(&snapshot{summary: computeSummary(good), good: good})
@@ -427,6 +563,7 @@ type Count struct {
 type Summary struct {
 	IP4           int
 	IP6           int
+	Onion         int
 	GoodCount     int
 	UserAgents    []Count
 	AS            []Count
@@ -456,15 +593,18 @@ func byCount(a, b Count) int {
 func computeSummary(good []*Node) Summary {
 	total := len(good)
 
-	var ip4, ip6 int
+	var ip4, ip6, onion int
 	ua := make(map[string]int)
 	as := make(map[string]int)
 	country := make(map[string]int)
 
 	for _, node := range good {
-		if node.IP.To4() != nil {
+		switch {
+		case node.IsOnion():
+			onion++
+		case node.IP.To4() != nil:
 			ip4++
-		} else {
+		default:
 			ip6++
 		}
 
@@ -516,6 +656,7 @@ func computeSummary(good []*Node) Summary {
 	return Summary{
 		IP4:           ip4,
 		IP6:           ip6,
+		Onion:         onion,
 		GoodCount:     total,
 		UserAgents:    sortedUA,
 		AS:            sortedAS,

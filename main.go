@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/decred/dcrd/chaincfg/v3"
@@ -22,9 +23,11 @@ func run(ctx context.Context) error {
 
 	// Parse CLI args.
 	testnet := flag.Bool("testnet", false, "run on testnet")
-	var listen, domain string
+	var listen, domain, proxy, onionSeed string
 	flag.StringVar(&listen, "listen", "127.0.0.1:8111", "listen address:port")
 	flag.StringVar(&domain, "domain", "localhost", "cookie domain")
+	flag.StringVar(&proxy, "proxy", "", "SOCKS5 proxy (e.g. arti/tor at 127.0.0.1:9150) for reaching onion peers")
+	flag.StringVar(&onionSeed, "onion-seed", "", "comma-separated v3 .onion bootstrap addresses (requires -proxy)")
 	flag.Parse()
 
 	params := chaincfg.MainNetParams()
@@ -32,7 +35,12 @@ func run(ctx context.Context) error {
 		params = chaincfg.TestNet3Params()
 	}
 
-	mgr, err := crawler.New(homeDir, params, seedIPs)
+	var onionSeeds []string
+	if onionSeed != "" {
+		onionSeeds = strings.Split(onionSeed, ",")
+	}
+
+	mgr, err := crawler.New(homeDir, params, seedIPs, proxy, onionSeeds)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize crawler: %v\n", err)
 		return err

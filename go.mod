@@ -7,6 +7,7 @@ require (
 	github.com/decred/dcrd/dcrutil/v4 v4.0.2
 	github.com/decred/dcrd/peer/v3 v3.2.0
 	github.com/decred/dcrd/wire v1.7.5
+	github.com/decred/go-socks v1.1.0
 	github.com/gin-gonic/gin v1.10.1
 )
 
@@ -27,7 +28,6 @@ require (
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.4 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/decred/dcrd/txscript/v4 v4.1.2 // indirect
-	github.com/decred/go-socks v1.1.0 // indirect
 	github.com/decred/slog v1.2.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect

@@ -17,7 +17,7 @@
             <tbody id="nodes-table">
                 {{ range $node := .Nodes }}
                     <tr>
-                        <td class="mono"><a href="/node?ip={{ $node.IP }}">{{ $node.IP }}</a></td>
+                        <td class="mono"><a href="/node?ip={{ $node.Address }}">{{ $node.Address }}</a></td>
                         {{ with $node.GeoData }}
                             <td>{{ .City }} / {{ .Region }}<br/><span class="muted">{{ .Country }}</span></td>
                             <td>{{ .ISP }}</td>
@@ -56,7 +56,8 @@
     const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
     function rowFor(item) {
-        const ipCell = '<td class="mono"><a href="/node?ip=' + encodeURIComponent(item.IP) + '">' + esc(item.IP) + '</a></td>';
+        const addr = item.Onion || item.IP;
+        const ipCell = '<td class="mono"><a href="/node?ip=' + encodeURIComponent(addr) + '">' + esc(addr) + '</a></td>';
         if (item.GeoData) {
             const g = item.GeoData;
             return '<tr>' + ipCell +

@@ -11,9 +11,9 @@ func newTestManager(good []*Node) *Manager {
 	m := &Manager{nodes: make(map[string]*Node)}
 	for _, n := range good {
 		n.good = true
-		ip := n.IP.String()
-		m.nodes[ip] = n
-		m.goodNodes = append(m.goodNodes, ip)
+		key := n.Address()
+		m.nodes[key] = n
+		m.goodNodes = append(m.goodNodes, key)
 	}
 	m.rebuildSnapshot()
 	return m

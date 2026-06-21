@@ -498,7 +498,9 @@ svg {
 .stat-grid {
   margin-top: 18px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* auto-fit so the optional Tor tile makes a clean 5-up row rather than
+     stranding a single tile on a second row; still 4-up at typical widths. */
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 16px;
 }
 .stat-tile {

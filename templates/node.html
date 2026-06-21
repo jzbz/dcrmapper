@@ -3,7 +3,7 @@
 {{ if .OK }}
 
     <div class="node-head">
-        <h1>{{ .Node.IP }}</h1>
+        <h1>{{ .Node.Address }}</h1>
         {{ if .Good }}
             <span class="badge-online">Online</span>
         {{ else }}
@@ -24,6 +24,10 @@
                                 {{ if .Good }}<span class="badge-online">Online</span>
                                 {{ else }}<span class="badge-offline">Offline</span>{{ end }}
                             </td>
+                        </tr>
+                        <tr>
+                            <th>Type</th>
+                            <td>{{ if .Node.IsOnion }}Tor v3 onion{{ else }}Clearnet{{ end }}</td>
                         </tr>
                         <tr>
                             <th>Last updated</th>
@@ -79,7 +83,7 @@
             iconAnchor: [14, 31],
             popupAnchor: [0, -26],
         });
-        L.marker([{{ .Lat }}, {{ .Lon }}], { icon: nodeIcon }).bindPopup('{{ $.Node.IP }}').addTo(map);
+        L.marker([{{ .Lat }}, {{ .Lon }}], { icon: nodeIcon }).bindPopup('{{ $.Node.Address }}').addTo(map);
     </script>
     {{ end }}
 
