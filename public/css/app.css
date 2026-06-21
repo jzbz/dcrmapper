@@ -750,6 +750,10 @@ svg {
   text-align: left;
   font-size: 13px;
 }
+.table th,
+.table td {
+  text-align: left;
+}
 .table thead th {
   padding: 14px 22px;
   border-bottom: 1px solid var(--border);
@@ -759,6 +763,7 @@ svg {
   text-transform: uppercase;
   color: var(--t4);
 }
+.table tbody th,
 .table tbody td {
   padding: 13px 22px;
   border-bottom: 1px solid var(--divider);
@@ -766,6 +771,7 @@ svg {
 .table tbody tr {
   animation: rowIn 0.4s ease both;
 }
+.table tbody tr:last-child th,
 .table tbody tr:last-child td {
   border-bottom: none;
 }
