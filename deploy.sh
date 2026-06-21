@@ -15,10 +15,16 @@
 #   --domain <host>   Domain to serve (Caddy provisions a TLS cert for it).
 #   --http            Serve plain HTTP on :80 instead of HTTPS (for testing).
 #   --testnet         Crawl testnet instead of mainnet.
+#   --no-onion        Disable Tor support (skip building/running arti).
+#   --onion-seed <l>  Comma-separated v3 .onion bootstrap peers to probe.
 #   --go-version <v>  Go toolchain version to install   (default: 1.26.4).
 #   --repo <url>      Git repository to deploy.
 #   --listen <addr>   Internal listen address           (default: 127.0.0.1:8111).
 #   -h, --help        Show this help.
+#
+# Onion support is ON by default: the script builds arti (the Tor Project's Rust
+# client) and runs it as a local SOCKS proxy so the crawler can reach v3 .onion
+# peers. Use --no-onion to skip it.
 #
 set -euo pipefail
 
@@ -33,6 +39,12 @@ LISTEN="127.0.0.1:8111"
 DOMAIN=""
 HTTP_ONLY=0
 TESTNET=0
+ONION=1
+ONION_SEED=""
+# Loopback SOCKS5 endpoint arti listens on and dcrmapper dials for onion peers.
+ARTI_SOCKS="127.0.0.1:9150"
+# Where the Rust toolchain used to build arti is kept (out of /root).
+RUST_HOME="/opt/rust"
 
 # ---- Logging --------------------------------------------------------------
 
@@ -69,6 +81,8 @@ while [[ $# -gt 0 ]]; do
     --domain)     DOMAIN="${2:?--domain needs a value}"; shift 2 ;;
     --http)       HTTP_ONLY=1; shift ;;
     --testnet)    TESTNET=1; shift ;;
+    --no-onion)   ONION=0; shift ;;
+    --onion-seed) ONION_SEED="${2:?--onion-seed needs a value}"; shift 2 ;;
     --go-version) GO_VERSION="${2:?--go-version needs a value}"; shift 2 ;;
     --repo)       REPO_URL="${2:?--repo needs a value}"; shift 2 ;;
     --listen)     LISTEN="${2:?--listen needs a value}"; shift 2 ;;
@@ -142,7 +156,88 @@ else
   ok "Caddy installed ($(caddy version | head -1))"
 fi
 
-# ---- 5. Service user ------------------------------------------------------
+# ---- 5. Tor proxy (arti) --------------------------------------------------
+#
+# arti is the Tor Project's Rust client. We run it as a loopback SOCKS5 proxy so
+# the crawler can reach v3 .onion peers; it only makes outbound Tor connections
+# and exposes nothing to the internet. arti has no official prebuilt packages
+# yet, so it is compiled from source with a Rust toolchain — the heaviest step
+# of this script. Skipped entirely with --no-onion.
+
+if [[ $ONION -eq 1 ]]; then
+  if [[ -x /usr/local/bin/arti ]]; then
+    ok "arti already installed ($(/usr/local/bin/arti --version 2>/dev/null | head -1))"
+  else
+    log "Installing build dependencies for arti"
+    apt-get install -y -qq build-essential pkg-config libsqlite3-dev >/dev/null
+    ok "build-essential, pkg-config, libsqlite3-dev installed"
+
+    log "Installing Rust toolchain (to build arti)"
+    export RUSTUP_HOME="${RUST_HOME}/rustup"
+    export CARGO_HOME="${RUST_HOME}/cargo"
+    if [[ ! -x "${CARGO_HOME}/bin/cargo" ]]; then
+      curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
+        | sh -s -- -y --profile minimal --no-modify-path
+    fi
+    ok "Rust ready ($(${CARGO_HOME}/bin/cargo --version))"
+
+    # Cap build parallelism on low-memory hosts so the compile does not OOM.
+    # arti pulls in hundreds of crates; on 1 GB a single job is the safe choice.
+    MEM_KB="$(awk '/MemTotal/{print $2}' /proc/meminfo)"
+    if [[ "${MEM_KB:-0}" -lt 2097152 ]]; then
+      export CARGO_BUILD_JOBS=1
+      warn "Under 2 GB RAM: building arti single-threaded (slow). Add swap if it stalls."
+    fi
+
+    log "Building arti from source — this can take several minutes"
+    "${CARGO_HOME}/bin/cargo" install --locked --root /usr/local arti
+    ok "arti installed ($(/usr/local/bin/arti --version | head -1))"
+  fi
+
+  if id arti >/dev/null 2>&1; then
+    ok "arti service user exists"
+  else
+    useradd --system --home-dir /var/lib/arti --shell /usr/sbin/nologin arti
+    ok "created arti service user"
+  fi
+
+  log "Writing arti systemd unit"
+  cat > /etc/systemd/system/arti.service <<EOF
+[Unit]
+Description=arti - Tor client (SOCKS proxy for onion crawling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=arti
+Group=arti
+# StateDirectory grants writable /var/lib/arti; HOME points arti's state and
+# cache there (its XDG dirs land under \$HOME).
+Environment=HOME=/var/lib/arti
+StateDirectory=arti
+ExecStart=/usr/local/bin/arti proxy -p ${ARTI_SOCKS##*:}
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable arti >/dev/null 2>&1 || true
+  systemctl restart arti
+  ok "arti running (SOCKS5 on ${ARTI_SOCKS}); first Tor bootstrap takes ~30-60s"
+else
+  log "Onion support disabled (--no-onion); skipping arti"
+fi
+
+# ---- 6. Service user ------------------------------------------------------
 
 if id "$SERVICE_USER" >/dev/null 2>&1; then
   ok "Service user '${SERVICE_USER}' exists"
@@ -153,7 +248,7 @@ else
   ok "Created ${SERVICE_USER} (home: ${APP_HOME})"
 fi
 
-# ---- 6. Fetch & build -----------------------------------------------------
+# ---- 7. Fetch & build -----------------------------------------------------
 
 if [[ -d "${APP_DIR}/.git" ]]; then
   ACTION="upgrade"
@@ -180,17 +275,28 @@ log "Building dcrmapper"
 chown "${SERVICE_USER}:${SERVICE_USER}" "${APP_DIR}/dcrmapper.new"
 ok "Build succeeded"
 
-# ---- 7. systemd service ---------------------------------------------------
+# ---- 8. systemd service ---------------------------------------------------
 
 log "Writing systemd unit"
 EXEC="${APP_DIR}/dcrmapper -listen ${LISTEN} -domain ${COOKIE_DOMAIN}"
 [[ $TESTNET -eq 1 ]] && EXEC="${EXEC} -testnet"
+
+# When onion support is on, point the crawler at arti's SOCKS proxy and make the
+# unit prefer (but not require) arti so it starts first. The crawl still works if
+# arti is down — only onion dials need it.
+ARTI_UNIT_DEPS=""
+if [[ $ONION -eq 1 ]]; then
+  EXEC="${EXEC} -proxy ${ARTI_SOCKS}"
+  [[ -n "$ONION_SEED" ]] && EXEC="${EXEC} -onion-seed ${ONION_SEED}"
+  ARTI_UNIT_DEPS=$'After=arti.service\nWants=arti.service'
+fi
 
 cat > /etc/systemd/system/dcrmapper.service <<EOF
 [Unit]
 Description=dcrmapper - Decred network world map
 After=network-online.target
 Wants=network-online.target
+${ARTI_UNIT_DEPS}
 
 [Service]
 User=${SERVICE_USER}
@@ -221,7 +327,7 @@ systemctl enable dcrmapper >/dev/null 2>&1 || true
 systemctl restart dcrmapper
 ok "dcrmapper service running (network: ${NETWORK})"
 
-# ---- 8. Caddy reverse proxy ----------------------------------------------
+# ---- 9. Caddy reverse proxy ----------------------------------------------
 
 log "Writing Caddyfile"
 if [[ $HTTP_ONLY -eq 1 ]]; then
@@ -262,6 +368,9 @@ fi
 cat <<EOF
    ${C_DIM}Logs:${C_OFF}  journalctl -u dcrmapper -f
    ${C_DIM}Caddy:${C_OFF} journalctl -u caddy -f
+EOF
+[[ $ONION -eq 1 ]] && printf '   %sarti:%s  journalctl -u arti -f\n' "$C_DIM" "$C_OFF"
+cat <<EOF
 
 The map fills in over the first few minutes as nodes are crawled and geolocated.
 EOF
