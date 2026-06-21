@@ -6,8 +6,27 @@
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
         <title>{{ .AppName }}</title>
+        <meta name="description" content="A live world map of the Decred network. The crawler continually contacts every reachable public node — explore them by country, network and software version.">
+        <meta name="theme-color" content="#05070e">
 
         <link rel="icon" type="image/svg+xml" href="{{ asset "/public/images/dcr.svg" }}">
+
+        <!-- Social / Open Graph card -->
+        <meta property="og:type" content="website">
+        <meta property="og:site_name" content="{{ .AppName }}">
+        <meta property="og:title" content="Decred Mapper — live map of the Decred network">
+        <meta property="og:description" content="The crawler continually contacts every reachable public node — explore them by country, network and software version.">
+        <meta property="og:url" content="https://map.dcr.pw/">
+        <meta property="og:image" content="https://map.dcr.pw{{ asset "/public/images/og-card.png" }}">
+        <meta property="og:image:width" content="1200">
+        <meta property="og:image:height" content="630">
+        <meta property="og:image:alt" content="Decred Mapper — a live map of the Decred network">
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:title" content="Decred Mapper — live map of the Decred network">
+        <meta name="twitter:description" content="The crawler continually contacts every reachable public node — explore them by country, network and software version.">
+        <meta name="twitter:image" content="https://map.dcr.pw{{ asset "/public/images/og-card.png" }}">
+        <meta name="twitter:image:alt" content="Decred Mapper — a live map of the Decred network">
+
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap">
