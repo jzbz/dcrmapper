@@ -1,19 +1,17 @@
 {{ template "header" . }}
 
-<link rel="stylesheet" href="{{ asset "/public/css/vendor/MarkerCluster-1.5.3.css" }}">
-<link rel="stylesheet" href="{{ asset "/public/css/vendor/MarkerCluster.Default-1.5.3.css" }}">
-<script src="{{ asset "/public/js/vendor/leaflet.markercluster-1.5.3.js" }}"></script>
-
 {{ template "summary" . }}
 
 <div class="map-card">
     <div class="map-head">
         <div class="map-title">
             <b>Global node distribution</b>
-            <span>live · clustered</span>
+            <span>equirectangular · live</span>
         </div>
         <div class="map-legend">
             <i><span class="legend-dot"></span>reachable node</i>
+            <i><span class="legend-dot is-v6"></span>IPv6 node</i>
+            <i><span class="legend-line"></span>relay link</i>
         </div>
     </div>
     <div id="world-map"></div>
@@ -141,41 +139,7 @@
     })();
 </script>
 
-<script>
-    const bounds = L.latLngBounds(L.latLng(-59, -180), L.latLng(82, 180));
-    const map = L.map('world-map', {
-        center: bounds.getCenter(),
-        minZoom: 2,
-        zoom: 2,
-        attributionControl: false,
-        maxBounds: bounds,
-        maxBoundsViscosity: 1.0,
-    });
-
-    const tileURL = {{ if eq .Theme "dark" }}'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png'{{ else }}'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png'{{ end }};
-    L.tileLayer(tileURL, { noWrap: true, subdomains: 'abcd' }).addTo(map);
-
-    const myIcon = L.icon({
-        iconUrl: '/public/images/pin.svg',
-        iconRetinaUrl: '/public/images/pin.svg',
-        iconSize: [28, 36],
-        iconAnchor: [14, 31],
-        popupAnchor: [0, -26],
-    });
-
-    // Cluster markers so the map stays responsive with hundreds of nodes.
-    const markers = L.markerClusterGroup({ chunkedLoading: true });
-    fetch('/world_nodes')
-        .then((res) => res.json())
-        .then((nodes) => {
-            (nodes || []).forEach((n) => {
-                markers.addLayer(
-                    L.marker([n.lat, n.lon], { icon: myIcon })
-                        .bindPopup('<a href="/node?ip=' + encodeURIComponent(n.ip) + '">' + n.ip + '</a>')
-                );
-            });
-            map.addLayer(markers);
-        });
-</script>
+<script src="{{ asset "/public/js/worldmap.js" }}"></script>
+<script>DCRWorldMap('#world-map');</script>
 
 {{ template "footer" . }}

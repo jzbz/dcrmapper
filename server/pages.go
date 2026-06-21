@@ -43,11 +43,15 @@ func homepage(c *gin.Context) {
 }
 
 // mapMarker is the minimal node representation needed to plot a marker on the
-// world map.
+// world map, plus the few fields shown in its hover tooltip.
 type mapMarker struct {
-	IP  string  `json:"ip"`
-	Lat float32 `json:"lat"`
-	Lon float32 `json:"lon"`
+	IP      string  `json:"ip"`
+	Lat     float32 `json:"lat"`
+	Lon     float32 `json:"lon"`
+	V6      bool    `json:"v6"`
+	Country string  `json:"country"`
+	ASN     string  `json:"asn"`
+	UA      string  `json:"ua"`
 }
 
 func worldNodes(c *gin.Context) {
@@ -58,9 +62,13 @@ func worldNodes(c *gin.Context) {
 			continue
 		}
 		markers = append(markers, mapMarker{
-			IP:  n.IP.String(),
-			Lat: n.GeoData.Lat,
-			Lon: n.GeoData.Lon,
+			IP:      n.IP.String(),
+			Lat:     n.GeoData.Lat,
+			Lon:     n.GeoData.Lon,
+			V6:      n.IP.To4() == nil,
+			Country: n.GeoData.Country,
+			ASN:     n.GeoData.ASName,
+			UA:      n.UserAgent,
 		})
 	}
 	c.JSON(http.StatusOK, markers)
