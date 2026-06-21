@@ -3,10 +3,10 @@ module github.com/jzbz/dcrmapper
 go 1.26.4
 
 require (
-	github.com/decred/dcrd/chaincfg/v3 v3.2.1
+	github.com/decred/dcrd/chaincfg/v3 v3.3.0
 	github.com/decred/dcrd/dcrutil/v4 v4.0.2
-	github.com/decred/dcrd/peer/v3 v3.1.3
-	github.com/decred/dcrd/wire v1.7.0
+	github.com/decred/dcrd/peer/v3 v3.2.0
+	github.com/decred/dcrd/wire v1.7.5
 	github.com/gin-gonic/gin v1.10.1
 )
 
@@ -17,16 +17,16 @@ require (
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
-	github.com/decred/base58 v1.0.5 // indirect
-	github.com/decred/dcrd/chaincfg/chainhash v1.0.4 // indirect
+	github.com/decred/base58 v1.0.6 // indirect
+	github.com/decred/dcrd/chaincfg/chainhash v1.0.5 // indirect
 	github.com/decred/dcrd/container/lru v1.0.0 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/decred/dcrd/crypto/rand v1.0.1 // indirect
 	github.com/decred/dcrd/crypto/ripemd160 v1.0.2 // indirect
 	github.com/decred/dcrd/dcrec v1.0.1 // indirect
-	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.3 // indirect
+	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.4 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
-	github.com/decred/dcrd/txscript/v4 v4.1.1 // indirect
+	github.com/decred/dcrd/txscript/v4 v4.1.2 // indirect
 	github.com/decred/go-socks v1.1.0 // indirect
 	github.com/decred/slog v1.2.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
