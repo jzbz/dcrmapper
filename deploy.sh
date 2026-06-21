@@ -169,8 +169,10 @@ if [[ $ONION -eq 1 ]]; then
     ok "arti already installed ($(/usr/local/bin/arti --version 2>/dev/null | head -1))"
   else
     log "Installing build dependencies for arti"
-    apt-get install -y -qq build-essential pkg-config libsqlite3-dev >/dev/null
-    ok "build-essential, pkg-config, libsqlite3-dev installed"
+    # libssl-dev: arti's default native-tls backend links the system OpenSSL
+    # via openssl-sys, which needs the dev headers and openssl.pc.
+    apt-get install -y -qq build-essential pkg-config libssl-dev libsqlite3-dev >/dev/null
+    ok "build-essential, pkg-config, libssl-dev, libsqlite3-dev installed"
 
     log "Installing Rust toolchain (to build arti)"
     export RUSTUP_HOME="${RUST_HOME}/rustup"

@@ -183,7 +183,8 @@ source. *(Skip this whole section if you don't want onion crawling.)*
 Install a Rust toolchain and the build dependencies, then compile arti:
 
 ```sh
-sudo apt install -y build-essential pkg-config libsqlite3-dev
+# libssl-dev is required: arti's default native-tls backend links system OpenSSL.
+sudo apt install -y build-essential pkg-config libssl-dev libsqlite3-dev
 # Rust toolchain, kept out of /root so it can be reused on upgrades.
 export RUSTUP_HOME=/opt/rust/rustup CARGO_HOME=/opt/rust/cargo
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
@@ -366,5 +367,6 @@ arti (`cargo install --locked --root /usr/local arti` again, then
 | `Hit ip-api rate limit` in logs | Normal — the free ip-api tier is rate-limited; the crawler backs off and retries automatically. |
 | Theme switcher doesn't persist | Make sure `-domain` matches the domain you serve from. |
 | arti build fails / killed (OOM) | The Rust compile needs RAM. Add swap, build on a 2 GB instance, or deploy with `--no-onion`. On 1 GB `deploy.sh` already limits it to one job. |
+| arti build: `openssl-sys` / "Could not find openssl" | Install the OpenSSL dev package: `libssl-dev` (Debian/Ubuntu) or `openssl-devel` (Fedora/RHEL). `deploy.sh` installs `libssl-dev` automatically; this only bites manual builds. |
 | Onion dials time out in logs | arti is probably still bootstrapping (first run takes ~30-60s) or not running. `systemctl status arti`; confirm SOCKS is up: `ss -ltnp \| grep 9150`. Clearnet crawling is unaffected. |
 | No onion nodes ever appear | Expected for now: the crawler can only *probe* onion peers you seed with `-onion-seed`, and few/none exist publicly yet. Automatic discovery needs a Decred protocol upgrade (addrv2) that isn't in released nodes. Verify arti with `journalctl -u arti`. |
