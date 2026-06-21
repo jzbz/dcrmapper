@@ -1,30 +1,35 @@
 {{ define "summary" }}
 
 <section class="summary">
+    <div class="eyebrow">Live network topology</div>
     <h1><span class="count">{{ .Summary.GoodCount }}</span> Decred nodes online</h1>
     <p class="lead">
-        {{ .AppName }} continually crawls the Decred network and attempts to
-        contact every public node. There are currently
-        <strong>{{ .Summary.GoodCount }}</strong> reachable public nodes across
-        <strong>{{ len .Summary.CountryCounts }}</strong> countries.
+        {{ .AppName }} continually crawls the Decred network and contacts every
+        public node. <strong>{{ .Summary.GoodCount }}</strong> reachable peers are
+        responding across <strong>{{ len .Summary.CountryCounts }}</strong>
+        countries right now.
     </p>
 
     <dl class="stat-grid">
-        <div class="card stat">
-            <dt class="stat-label">Reachable</dt>
+        <div class="stat-tile t-turq">
+            <div class="stat-top"><dt class="stat-label">Reachable</dt><span class="stat-dot"></span></div>
             <dd class="stat-value">{{ .Summary.GoodCount }}</dd>
+            <div class="stat-sub">public peers responding</div>
         </div>
-        <div class="card stat">
-            <dt class="stat-label">Countries</dt>
+        <div class="stat-tile t-cyan">
+            <div class="stat-top"><dt class="stat-label">Countries</dt><span class="stat-dot"></span></div>
             <dd class="stat-value">{{ len .Summary.CountryCounts }}</dd>
+            <div class="stat-sub">with &ge;1 node</div>
         </div>
-        <div class="card stat">
-            <dt class="stat-label">IPv4</dt>
+        <div class="stat-tile t-blue">
+            <div class="stat-top"><dt class="stat-label">IPv4</dt><span class="stat-dot"></span></div>
             <dd class="stat-value">{{ .Summary.IP4 }}</dd>
+            <div class="stat-sub">{{ pct .Summary.IP4 .Summary.GoodCount }}% of nodes</div>
         </div>
-        <div class="card stat">
-            <dt class="stat-label">IPv6</dt>
+        <div class="stat-tile t-violet">
+            <div class="stat-top"><dt class="stat-label">IPv6</dt><span class="stat-dot"></span></div>
             <dd class="stat-value">{{ .Summary.IP6 }}</dd>
+            <div class="stat-sub">{{ pct .Summary.IP6 .Summary.GoodCount }}% of nodes</div>
         </div>
     </dl>
 </section>

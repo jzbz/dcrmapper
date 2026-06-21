@@ -52,7 +52,7 @@
         </div>
 
         {{ with .Node.GeoData }}
-        <section class="card map-card">
+        <section class="map-card">
             <div id="node-map"></div>
             <div class="map-meta">
                 <div>{{ .City }}<br/>{{ .Region }}<br/>{{ .Country }}</div>
@@ -72,7 +72,14 @@
         });
         const tileURL = {{ if eq $.Theme "dark" }}'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png'{{ else }}'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png'{{ end }};
         L.tileLayer(tileURL, { noWrap: true, subdomains: 'abcd' }).addTo(map);
-        L.marker([{{ .Lat }}, {{ .Lon }}]).bindPopup('{{ $.Node.IP }}').addTo(map);
+        const nodeIcon = L.icon({
+            iconUrl: '/public/images/pin.svg',
+            iconRetinaUrl: '/public/images/pin.svg',
+            iconSize: [28, 36],
+            iconAnchor: [14, 31],
+            popupAnchor: [0, -26],
+        });
+        L.marker([{{ .Lat }}, {{ .Lon }}], { icon: nodeIcon }).bindPopup('{{ $.Node.IP }}').addTo(map);
     </script>
     {{ end }}
 

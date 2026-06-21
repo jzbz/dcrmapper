@@ -71,6 +71,29 @@ func assetURL(webPath string) string {
 	return webPath + "?v=" + v
 }
 
+// percent returns a as a whole-number percentage of b, guarding against a
+// zero denominator (an empty crawl) so templates can call it unconditionally.
+func percent(a, b int) int {
+	if b == 0 {
+		return 0
+	}
+	return 100 * a / b
+}
+
+// uaPalette colours the user-agent breakdown. It mirrors the JS palette in
+// user_agents.html so the donut segments match their version bars.
+var uaPalette = []string{
+	"#2ED6A1", "#36C5E0", "#5BA8FF", "#9B8CFF",
+	"#F5A623", "#FF6B8A", "#7d869c", "#1f9e78",
+}
+
+// uaColor returns the accent colour for the i-th user-agent row, cycling the
+// palette. The result is template.CSS so it can be dropped into an inline
+// custom-property declaration without the HTML sanitiser rejecting it.
+func uaColor(i int) template.CSS {
+	return template.CSS(uaPalette[((i%len(uaPalette))+len(uaPalette))%len(uaPalette)])
+}
+
 // securityHeaders sets conservative response headers on every request.
 func securityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -95,9 +118,11 @@ func NewRouter(templates, static fs.FS) *gin.Engine {
 	router.Use(securityHeaders())
 
 	funcMap := template.FuncMap{
-		"incr":  func(i int) int { return i + 1 },
-		"date":  func(t time.Time) string { return t.In(time.UTC).Format(timeFormat) },
-		"asset": assetURL,
+		"incr":    func(i int) int { return i + 1 },
+		"date":    func(t time.Time) string { return t.In(time.UTC).Format(timeFormat) },
+		"asset":   assetURL,
+		"pct":     percent,
+		"uacolor": uaColor,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcMap).ParseFS(templates, "templates/*"))
 	router.SetHTMLTemplate(tmpl)

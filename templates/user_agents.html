@@ -2,29 +2,114 @@
 
 {{ template "summary" . }}
 
-<section class="card clip narrow">
-    <div class="table-wrap">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Rank</th>
-                    <th>User Agent</th>
-                    <th class="right">Count</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{ range $rank, $count := .Summary.UserAgents }}
-                <tr>
-                    <td class="num muted">{{ incr $rank }}</td>
-                    <td class="mono">{{ $count.Value }}</td>
-                    <td class="right num">{{ $count.Count }}</td>
-                </tr>
-                {{ else }}
-                <tr><td colspan="3" class="empty">No nodes</td></tr>
-                {{ end }}
-            </tbody>
-        </table>
+{{ if .Summary.UserAgents }}
+<div class="ua-grid">
+
+    <!-- Version breakdown bars -->
+    <section class="panel">
+        <div class="panel-title-lg">Version breakdown</div>
+        <div class="ua-list">
+            {{ range $rank, $count := .Summary.UserAgents }}
+            <div class="ua-row" style="--c: {{ uacolor $rank }}">
+                <div class="ua-rowtop">
+                    <span class="ua-name"><span class="ua-dot"></span><span class="truncate" title="{{ $count.Value }}">{{ $count.Value }}</span></span>
+                    <span class="ua-meta">{{ $count.Count }} &middot; {{ pct $count.Count $.Summary.GoodCount }}%</span>
+                </div>
+                <div class="bar"><div class="bar-fill" style="width: {{ pct $count.Count (index $.Summary.UserAgents 0).Count }}%"></div></div>
+            </div>
+            {{ end }}
+        </div>
+    </section>
+
+    <div class="ua-side">
+        <!-- Release adoption donut -->
+        <section class="panel">
+            <div class="panel-title-lg">Release adoption</div>
+            <div class="ua-donut-sub truncate" title="{{ (index .Summary.UserAgents 0).Value }}">{{ (index .Summary.UserAgents 0).Value }} &mdash; most common</div>
+            <div id="ua-donut" class="donut"></div>
+        </section>
+
+        <!-- Summary card -->
+        <section class="panel">
+            <div class="kv-line">
+                <span>Distinct versions</span>
+                <span class="val">{{ len .Summary.UserAgents }}</span>
+            </div>
+            <div class="divline"></div>
+            <div class="kv-line">
+                <span>Most common share</span>
+                <span class="val live">{{ pct (index .Summary.UserAgents 0).Count .Summary.GoodCount }}%</span>
+            </div>
+            <div class="divline"></div>
+            <div class="kv-line">
+                <span>Reachable peers</span>
+                <span class="val">{{ .Summary.GoodCount }}</span>
+            </div>
+        </section>
     </div>
+</div>
+
+<script>
+    window.__ua = [
+        {{- range $i, $c := .Summary.UserAgents -}}
+        {{- if $i }},{{ end -}}
+        { "n": {{ $c.Count }} }
+        {{- end -}}
+    ];
+    (function () {
+        const data = window.__ua || [];
+        const host = document.getElementById('ua-donut');
+        if (!host || !data.length) return;
+
+        // Palette mirrors the server-side uacolor() helper so the donut segments
+        // match their version bars.
+        const palette = ['#2ED6A1', '#36C5E0', '#5BA8FF', '#9B8CFF', '#F5A623', '#FF6B8A', '#7d869c', '#1f9e78'];
+        const total = data.reduce((a, d) => a + d.n, 0) || 1;
+        const NS = 'http://www.w3.org/2000/svg';
+        const size = 180, r = 70, cx = size / 2, cy = size / 2, sw = 14;
+        const circ = 2 * Math.PI * r;
+
+        const svg = document.createElementNS(NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+        svg.setAttribute('width', size);
+        svg.setAttribute('height', size);
+
+        const css = getComputedStyle(document.documentElement);
+        const track = document.createElementNS(NS, 'circle');
+        track.setAttribute('cx', cx); track.setAttribute('cy', cy); track.setAttribute('r', r);
+        track.setAttribute('fill', 'none');
+        track.setAttribute('stroke', (css.getPropertyValue('--track') || 'rgba(255,255,255,0.05)').trim());
+        track.setAttribute('stroke-width', sw);
+        svg.appendChild(track);
+
+        let offset = 0;
+        data.forEach((d, i) => {
+            const seg = (d.n / total) * circ;
+            const c = document.createElementNS(NS, 'circle');
+            c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
+            c.setAttribute('fill', 'none');
+            c.setAttribute('stroke', palette[i % palette.length]);
+            c.setAttribute('stroke-width', sw);
+            c.setAttribute('transform', 'rotate(-90 ' + cx + ' ' + cy + ')');
+            c.setAttribute('stroke-dasharray', seg + ' ' + (circ - seg));
+            c.setAttribute('stroke-dashoffset', -offset);
+            svg.appendChild(c);
+            offset += seg;
+        });
+        host.appendChild(svg);
+
+        const topPct = Math.round((data[0].n / total) * 100);
+        const label = document.createElement('div');
+        label.className = 'donut-label';
+        label.innerHTML = '<b>' + topPct + '%</b><span>most common</span>';
+        host.appendChild(label);
+    })();
+</script>
+
+{{ else }}
+<section class="panel">
+    <p class="empty">No nodes</p>
 </section>
+{{ end }}
 
 {{ template "footer" . }}
