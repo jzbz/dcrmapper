@@ -945,6 +945,8 @@ svg {
   height: 460px;
   border-radius: 12px;
   overflow: hidden;
+  touch-action: none;
+  user-select: none;
 }
 /* Pulsing halo behind each node marker (radar ping). */
 @keyframes dcrPing {
@@ -975,17 +977,44 @@ svg {
   background: var(--dcr-violet);
   box-shadow: 0 0 9px var(--dcr-violet);
 }
-.legend-line {
-  width: 18px;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--dcr-turq), var(--dcr-blue));
+/* Zoom +/- control, overlaid on the map. */
+.map-zoom {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px solid var(--border2);
+}
+.map-zoom button {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: var(--card2);
+  color: var(--t2);
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.map-zoom button + button {
+  border-top: 1px solid var(--border2);
+}
+.map-zoom button:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 #node-map {
   position: relative;
   height: 340px;
   border-radius: 12px;
   overflow: hidden;
+  touch-action: none;
+  user-select: none;
 }
 
 /* ---------- User agents ---------- */

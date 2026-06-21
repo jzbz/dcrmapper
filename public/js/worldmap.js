@@ -1,6 +1,7 @@
 // Stylised world map: dotted continents drawn on a canvas with a glowing,
 // pulsing SVG marker per node. No tiles, no external dependencies — the
 // landmass is a handful of coarse polygons rasterised into a lookup mask.
+// Supports zoom (wheel / buttons) and pan (drag).
 (function () {
   'use strict';
 
@@ -23,8 +24,8 @@
   // fill the card rather than leaving polar dead space.
   const LON_MIN = -168, LON_MAX = 192, LAT_MIN = -56, LAT_MAX = 80;
   const NS = 'http://www.w3.org/2000/svg';
-
-  const ACCENT = '#2ED6A1', VIOLET = '#9B8CFF', BLUE = '#5BA8FF';
+  const ACCENT = '#2ED6A1', VIOLET = '#9B8CFF';
+  const MAX_ZOOM = 6;
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g,
@@ -57,88 +58,57 @@
     };
   }
 
-  function render(host, nodes) {
+  // mount renders nodes into host and wires up zoom/pan. Re-runs on resize; an
+  // AbortController tears down the previous run's listeners so they don't stack.
+  function mount(host, nodes) {
+    if (host._dcrAbort) host._dcrAbort.abort();
+    const ac = new AbortController();
+    host._dcrAbort = ac;
+    const on = ac.signal;
+
     host.innerHTML = '';
     const W = host.clientWidth || 1000, H = host.clientHeight || 460;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const light = document.documentElement.classList.contains('light');
+    const solo = nodes.length === 1;
 
-    const px = (lon, lat) => ({
-      x: ((((lon - LON_MIN) % 360) + 360) % 360) / (LON_MAX - LON_MIN) * W,
-      y: (LAT_MAX - lat) / (LAT_MAX - LAT_MIN) * H,
-    });
+    // Base (unzoomed) projection. The view transform x*k+tx is applied on top.
+    const baseX = (lon) => ((((lon - LON_MIN) % 360) + 360) % 360) / (LON_MAX - LON_MIN) * W;
+    const baseY = (lat) => (LAT_MAX - lat) / (LAT_MAX - LAT_MIN) * H;
 
-    // Dotted continents.
-    const isLand = buildIsLand();
     const cv = document.createElement('canvas');
     cv.width = W * dpr; cv.height = H * dpr;
     cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
     host.appendChild(cv);
     const ctx = cv.getContext('2d');
     ctx.scale(dpr, dpr);
-    ctx.fillStyle = light ? 'rgba(34,46,76,0.16)' : 'rgba(255,255,255,0.085)';
+    const dotFill = light ? 'rgba(34,46,76,0.16)' : 'rgba(255,255,255,0.085)';
+
+    // Precompute land dot positions once so re-painting on zoom/pan is cheap.
+    const isLand = buildIsLand();
+    const land = [];
     for (let lon = LON_MIN; lon <= LON_MAX; lon += 1.9) {
       for (let lat = LAT_MIN; lat <= LAT_MAX; lat += 1.9) {
-        if (!isLand(lon, lat)) continue;
-        const p = px(lon, lat);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 0.9, 0, 7);
-        ctx.fill();
+        if (isLand(lon, lat)) land.push([baseX(lon), baseY(lat)]);
       }
     }
 
-    // Marker overlay.
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
     svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;';
     host.appendChild(svg);
 
-    const pts = nodes.map((n) => ({ n: n, p: px(n.lon, n.lat) }));
-    const solo = pts.length === 1; // single node (detail page): draw it large
-
-    // Decorative relay arcs fanning out from a central hub. Purely cosmetic —
-    // the crawler does not measure peer links.
-    if (pts.length > 3) {
-      const defs = document.createElementNS(NS, 'defs');
-      defs.innerHTML = '<linearGradient id="dcr-arc" x1="0" x2="1">' +
-        '<stop offset="0" stop-color="' + ACCENT + '" stop-opacity="0.85"/>' +
-        '<stop offset="1" stop-color="' + BLUE + '" stop-opacity="0.12"/></linearGradient>';
-      svg.appendChild(defs);
-
-      const hub = px(39, -98);
-      const stride = Math.max(1, Math.floor(pts.length / 22));
-      const targets = pts.filter((_, i) => i % stride === 0).slice(0, 22);
-      targets.forEach((t, i) => {
-        const mx = (hub.x + t.p.x) / 2;
-        const my = (hub.y + t.p.y) / 2 - Math.abs(hub.x - t.p.x) * 0.18 - 30;
-        const path = document.createElementNS(NS, 'path');
-        path.setAttribute('d', 'M' + hub.x + ',' + hub.y + ' Q' + mx + ',' + my + ' ' + t.p.x + ',' + t.p.y);
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', 'url(#dcr-arc)');
-        path.setAttribute('stroke-width', '1.1');
-        const len = Math.hypot(t.p.x - hub.x, t.p.y - hub.y) * 1.4;
-        path.setAttribute('stroke-dasharray', len);
-        path.setAttribute('stroke-dashoffset', len);
-        path.style.transition = 'stroke-dashoffset 1.4s ease';
-        svg.appendChild(path);
-        requestAnimationFrame(() => setTimeout(() => path.setAttribute('stroke-dashoffset', '0'), 120 + i * 45));
-      });
-    }
-
     const tip = document.createElement('div');
     tip.className = 'map-tip';
     host.appendChild(tip);
 
-    pts.forEach((d, i) => {
-      const color = d.n.v6 ? VIOLET : ACCENT;
-      const baseR = solo ? 5 : (d.n.v6 ? 2.6 : 2.2);
+    let dragMoved = false;
+    const markers = nodes.map((n, i) => {
+      const color = n.v6 ? VIOLET : ACCENT;
+      const baseR = solo ? 5 : (n.v6 ? 2.6 : 2.2);
       const hoverR = solo ? 6 : 3.6;
 
-      // Pulsing halo behind the dot (radar ping), staggered so they don't all
-      // fire in unison.
       const halo = document.createElementNS(NS, 'circle');
-      halo.setAttribute('cx', d.p.x);
-      halo.setAttribute('cy', d.p.y);
       halo.setAttribute('r', solo ? 10 : 6);
       halo.setAttribute('fill', color);
       halo.setAttribute('opacity', '0');
@@ -148,45 +118,130 @@
       svg.appendChild(halo);
 
       const dot = document.createElementNS(NS, 'circle');
-      dot.setAttribute('cx', d.p.x);
-      dot.setAttribute('cy', d.p.y);
       dot.setAttribute('r', baseR);
       dot.setAttribute('fill', color);
       dot.style.filter = 'drop-shadow(0 0 ' + (solo ? 8 : 5) + 'px ' + color + ')';
       dot.style.cursor = solo ? 'default' : 'pointer';
       dot.addEventListener('mouseenter', () => {
-        const meta = [d.n.asn, d.n.ua].filter(Boolean).map(esc).join(' · ');
-        tip.innerHTML = '<span style="color:' + color + '">' + esc(d.n.country) + '</span> · ' + esc(d.n.ip) +
+        const meta = [n.asn, n.ua].filter(Boolean).map(esc).join(' · ');
+        tip.innerHTML = '<span style="color:' + color + '">' + esc(n.country) + '</span> · ' + esc(n.ip) +
           (meta ? '<br><span class="map-tip-sub">' + meta + '</span>' : '');
-        tip.style.left = d.p.x + 'px';
-        tip.style.top = d.p.y + 'px';
+        tip.style.left = dot.getAttribute('cx') + 'px';
+        tip.style.top = dot.getAttribute('cy') + 'px';
         tip.style.opacity = '1';
         dot.setAttribute('r', hoverR);
-      });
+      }, { signal: on });
       dot.addEventListener('mouseleave', () => {
         tip.style.opacity = '0';
         dot.setAttribute('r', baseR);
-      });
-      // On the world map each dot links to its node page; the solo detail-page
-      // marker has nowhere to go.
+      }, { signal: on });
+      // Each world-map dot links to its node page; suppress the navigation when
+      // the click was really the end of a drag.
       if (!solo) {
         dot.addEventListener('click', () => {
-          window.location.href = '/node?ip=' + encodeURIComponent(d.n.ip);
-        });
+          if (!dragMoved) window.location.href = '/node?ip=' + encodeURIComponent(n.ip);
+        }, { signal: on });
       }
       svg.appendChild(dot);
+      return { bx: baseX(n.lon), by: baseY(n.lat), halo: halo, dot: dot };
     });
+
+    const view = { k: 1, tx: 0, ty: 0 };
+    function clampPan() {
+      // Keep the (scaled) map covering the viewport — no empty edges.
+      view.tx = Math.min(0, Math.max(W * (1 - view.k), view.tx));
+      view.ty = Math.min(0, Math.max(H * (1 - view.k), view.ty));
+    }
+    function paint() {
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = dotFill;
+      const r = 0.9 * (0.7 + 0.3 * view.k);
+      for (let i = 0; i < land.length; i++) {
+        const x = land[i][0] * view.k + view.tx, y = land[i][1] * view.k + view.ty;
+        if (x < -2 || x > W + 2 || y < -2 || y > H + 2) continue;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 7);
+        ctx.fill();
+      }
+      for (let i = 0; i < markers.length; i++) {
+        const m = markers[i];
+        const x = m.bx * view.k + view.tx, y = m.by * view.k + view.ty;
+        m.halo.setAttribute('cx', x); m.halo.setAttribute('cy', y);
+        m.dot.setAttribute('cx', x); m.dot.setAttribute('cy', y);
+      }
+    }
+    let raf = 0;
+    function schedule() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; paint(); }); }
+
+    // zoomAt scales about the (cx,cy) screen point so it stays put under the
+    // cursor / button.
+    function zoomAt(cx, cy, factor) {
+      const nk = Math.min(MAX_ZOOM, Math.max(1, view.k * factor));
+      if (nk === view.k) return;
+      view.tx = cx - (cx - view.tx) * (nk / view.k);
+      view.ty = cy - (cy - view.ty) * (nk / view.k);
+      view.k = nk;
+      clampPan();
+      schedule();
+    }
+
+    host.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const r = host.getBoundingClientRect();
+      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+    }, { passive: false, signal: on });
+
+    let dragging = false, lx = 0, ly = 0;
+    host.addEventListener('pointerdown', (e) => {
+      dragging = true; dragMoved = false; lx = e.clientX; ly = e.clientY;
+      host.setPointerCapture(e.pointerId);
+      host.style.cursor = 'grabbing';
+    }, { signal: on });
+    host.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - lx, dy = e.clientY - ly;
+      if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true;
+      view.tx += dx; view.ty += dy; lx = e.clientX; ly = e.clientY;
+      clampPan();
+      schedule();
+    }, { signal: on });
+    const endDrag = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      host.style.cursor = 'grab';
+      try { host.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+    host.addEventListener('pointerup', endDrag, { signal: on });
+    host.addEventListener('pointercancel', endDrag, { signal: on });
+    host.style.cursor = 'grab';
+
+    const ctrl = document.createElement('div');
+    ctrl.className = 'map-zoom';
+    const mkBtn = (label, aria) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.setAttribute('aria-label', aria);
+      return b;
+    };
+    const zin = mkBtn('+', 'Zoom in'), zout = mkBtn('−', 'Zoom out');
+    zin.addEventListener('click', () => zoomAt(W / 2, H / 2, 1.6), { signal: on });
+    zout.addEventListener('click', () => zoomAt(W / 2, H / 2, 1 / 1.6), { signal: on });
+    ctrl.appendChild(zin);
+    ctrl.appendChild(zout);
+    host.appendChild(ctrl);
+
+    paint();
   }
 
   // DCRWorldMap renders nodes into the element matching selector and re-renders
-  // on resize so the projection stays crisp. Pass an explicit nodes array (e.g.
-  // the single node on a detail page) to render it directly; omit it to fetch
-  // the full node list from /world_nodes.
+  // on resize. Pass an explicit nodes array (e.g. the single node on a detail
+  // page) to render it directly; omit it to fetch the full node list.
   window.DCRWorldMap = function (selector, data) {
     const host = document.querySelector(selector);
     if (!host) return;
     let nodes = Array.isArray(data) ? data : [];
-    const draw = () => render(host, nodes);
+    const draw = () => mount(host, nodes);
 
     let timer;
     window.addEventListener('resize', () => {
