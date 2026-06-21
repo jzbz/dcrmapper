@@ -40,7 +40,6 @@
   --dcr-blue: #5ba8ff;
   --dcr-violet: #9b8cff;
   --dcr-cyan: #36c5e0;
-  --dcr-purple: #c084fc;
   --amber: #f5a623;
   --down: #e0537a;
   --accent: #2ed6a1;
@@ -546,8 +545,8 @@ svg {
 .t-violet {
   --c: var(--dcr-violet);
 }
-.t-purple {
-  --c: var(--dcr-purple);
+.t-amber {
+  --c: var(--amber);
 }
 
 /* ---------- Cards / panels ---------- */
