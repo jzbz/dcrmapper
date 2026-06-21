@@ -67,23 +67,17 @@
     </div>
 
     {{ with .Node.GeoData }}
+    <script src="{{ asset "/public/js/worldmap.js" }}"></script>
     <script>
-        const map = L.map('node-map', {
-            center: [{{ .Lat }}, {{ .Lon }}],
-            minZoom: 2,
-            zoom: 5,
-            attributionControl: false,
-        });
-        const tileURL = {{ if eq $.Theme "dark" }}'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png'{{ else }}'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png'{{ end }};
-        L.tileLayer(tileURL, { noWrap: true, subdomains: 'abcd' }).addTo(map);
-        const nodeIcon = L.icon({
-            iconUrl: '/public/images/pin.svg',
-            iconRetinaUrl: '/public/images/pin.svg',
-            iconSize: [28, 36],
-            iconAnchor: [14, 31],
-            popupAnchor: [0, -26],
-        });
-        L.marker([{{ .Lat }}, {{ .Lon }}], { icon: nodeIcon }).bindPopup('{{ $.Node.Address }}').addTo(map);
+        DCRWorldMap('#node-map', [{
+            ip: "{{ $.Node.Address }}",
+            lat: {{ .Lat }},
+            lon: {{ .Lon }},
+            v6: {{ if $.Node.IsV6 }}true{{ else }}false{{ end }},
+            country: "{{ .Country }}",
+            asn: "{{ .ASName }}",
+            ua: "{{ $.Node.UserAgent }}"
+        }]);
     </script>
     {{ end }}
 

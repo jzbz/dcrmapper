@@ -31,6 +31,10 @@ type Node struct {
 // through a SOCKS proxy) rather than a clearnet IP node.
 func (n *Node) IsOnion() bool { return n.Onion != "" }
 
+// IsV6 reports whether the node is reachable over IPv6. Onion nodes have no IP
+// and are never v6.
+func (n *Node) IsV6() bool { return n.Onion == "" && n.IP.To4() == nil }
+
 // Address returns the node's canonical address: its .onion hostname for onion
 // nodes, otherwise its IP. This is also the key under which the node is stored,
 // so it is stable for the life of the node. Exposed to templates for display

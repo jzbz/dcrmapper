@@ -94,6 +94,7 @@
     host.appendChild(svg);
 
     const pts = nodes.map((n) => ({ n: n, p: px(n.lon, n.lat) }));
+    const solo = pts.length === 1; // single node (detail page): draw it large
 
     // Decorative relay arcs fanning out from a central hub. Purely cosmetic —
     // the crawler does not measure peer links.
@@ -130,14 +131,15 @@
 
     pts.forEach((d, i) => {
       const color = d.n.v6 ? VIOLET : ACCENT;
-      const baseR = d.n.v6 ? 2.6 : 2.2;
+      const baseR = solo ? 5 : (d.n.v6 ? 2.6 : 2.2);
+      const hoverR = solo ? 6 : 3.6;
 
       // Pulsing halo behind the dot (radar ping), staggered so they don't all
       // fire in unison.
       const halo = document.createElementNS(NS, 'circle');
       halo.setAttribute('cx', d.p.x);
       halo.setAttribute('cy', d.p.y);
-      halo.setAttribute('r', 6);
+      halo.setAttribute('r', solo ? 10 : 6);
       halo.setAttribute('fill', color);
       halo.setAttribute('opacity', '0');
       halo.style.transformBox = 'fill-box';
@@ -150,8 +152,8 @@
       dot.setAttribute('cy', d.p.y);
       dot.setAttribute('r', baseR);
       dot.setAttribute('fill', color);
-      dot.style.filter = 'drop-shadow(0 0 5px ' + color + ')';
-      dot.style.cursor = 'pointer';
+      dot.style.filter = 'drop-shadow(0 0 ' + (solo ? 8 : 5) + 'px ' + color + ')';
+      dot.style.cursor = solo ? 'default' : 'pointer';
       dot.addEventListener('mouseenter', () => {
         const meta = [d.n.asn, d.n.ua].filter(Boolean).map(esc).join(' · ');
         tip.innerHTML = '<span style="color:' + color + '">' + esc(d.n.country) + '</span> · ' + esc(d.n.ip) +
@@ -159,34 +161,46 @@
         tip.style.left = d.p.x + 'px';
         tip.style.top = d.p.y + 'px';
         tip.style.opacity = '1';
-        dot.setAttribute('r', 3.6);
+        dot.setAttribute('r', hoverR);
       });
       dot.addEventListener('mouseleave', () => {
         tip.style.opacity = '0';
         dot.setAttribute('r', baseR);
       });
-      dot.addEventListener('click', () => {
-        window.location.href = '/node?ip=' + encodeURIComponent(d.n.ip);
-      });
+      // On the world map each dot links to its node page; the solo detail-page
+      // marker has nowhere to go.
+      if (!solo) {
+        dot.addEventListener('click', () => {
+          window.location.href = '/node?ip=' + encodeURIComponent(d.n.ip);
+        });
+      }
       svg.appendChild(dot);
     });
   }
 
-  // DCRWorldMap fetches the node list and renders it into the element matching
-  // selector, re-rendering on resize so the projection stays crisp.
-  window.DCRWorldMap = function (selector) {
+  // DCRWorldMap renders nodes into the element matching selector and re-renders
+  // on resize so the projection stays crisp. Pass an explicit nodes array (e.g.
+  // the single node on a detail page) to render it directly; omit it to fetch
+  // the full node list from /world_nodes.
+  window.DCRWorldMap = function (selector, data) {
     const host = document.querySelector(selector);
     if (!host) return;
-    let nodes = [];
+    let nodes = Array.isArray(data) ? data : [];
     const draw = () => render(host, nodes);
-    fetch('/world_nodes')
-      .then((res) => res.json())
-      .then((data) => { nodes = data || []; draw(); })
-      .catch(() => {});
+
     let timer;
     window.addEventListener('resize', () => {
       clearTimeout(timer);
       timer = setTimeout(draw, 200);
     });
+
+    if (Array.isArray(data)) {
+      draw();
+      return;
+    }
+    fetch('/world_nodes')
+      .then((res) => res.json())
+      .then((d) => { nodes = d || []; draw(); })
+      .catch(() => {});
   };
 })();
