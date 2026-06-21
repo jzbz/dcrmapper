@@ -31,13 +31,11 @@
             <dd class="stat-value">{{ .Summary.IP6 }}</dd>
             <div class="stat-sub">{{ pct .Summary.IP6 .Summary.GoodCount }}% of nodes</div>
         </div>
-        {{ if .Summary.Onion }}
-        <div class="stat-tile t-turq">
+        <div class="stat-tile t-purple">
             <div class="stat-top"><dt class="stat-label">Tor</dt><span class="stat-dot"></span></div>
             <dd class="stat-value">{{ .Summary.Onion }}</dd>
-            <div class="stat-sub">v3 onion peers</div>
+            <div class="stat-sub">{{ pct .Summary.Onion .Summary.GoodCount }}% of nodes</div>
         </div>
-        {{ end }}
     </dl>
 </section>
 
