@@ -82,7 +82,7 @@
     host.appendChild(cv);
     const ctx = cv.getContext('2d');
     ctx.scale(dpr, dpr);
-    const dotFill = light ? 'rgba(34,46,76,0.16)' : 'rgba(255,255,255,0.085)';
+    const dotFill = light ? 'rgba(34,46,76,0.28)' : 'rgba(255,255,255,0.16)';
 
     // Precompute land dot positions once so re-painting on zoom/pan is cheap.
     const isLand = buildIsLand();
